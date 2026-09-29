@@ -115,6 +115,20 @@ public class StaffConsoleService {
 		return toReportItem(report);
 	}
 
+	/**
+	 * Accounts whose holder asked for erasure while under a safety hold. Their records are preserved for
+	 * review and erased automatically once the hold lifts.
+	 */
+	@Transactional(readOnly = true)
+	public List<PendingErasure> pendingErasures(String staffId) {
+		directory.require(staffId, StaffRole.MODERATOR);
+		return accounts.pendingErasures()
+			.stream()
+			.map(u -> new PendingErasure(u.getId(), displayName(u.getId()), u.getErasureRequestedAt(),
+					safety.holdReason(u.getId()).orElse("Hold lifted; erasure runs on the next sweep")))
+			.toList();
+	}
+
 	// ---- admin: accounts, staff, audit -------------------------------------------------------------
 
 	@Transactional
@@ -213,6 +227,9 @@ public class StaffConsoleService {
 	public record ReportItem(String id, String category, String priority, String status, String reportedUserId,
 			String reportedDisplayName, String reporterUserId, String targetType, String details, Instant createdAt,
 			Instant dueAt, boolean overdue, String assigneeId, long reportsAgainstUser, String resolution) {
+	}
+
+	public record PendingErasure(String userId, String displayName, Instant requestedAt, String holdReason) {
 	}
 
 	public record StaffMemberView(String userId, String displayName, StaffRole role, Instant grantedAt) {

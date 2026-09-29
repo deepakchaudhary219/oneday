@@ -16,4 +16,6 @@ public interface UserRepository extends JpaRepository<User, String> {
 	boolean existsByPhone(String phone);
 
 	List<User> findByVerificationStatusOrderByCreatedAtAsc(VerificationStatus status);
+
+	List<User> findByErasureRequestedAtIsNotNullOrderByErasureRequestedAtAsc();
 }

@@ -4,6 +4,7 @@ import java.util.List;
 
 import oneday.identity.AccountAdministration.VerificationDecision;
 import oneday.staff.StaffConsoleService.AuditItem;
+import oneday.staff.StaffConsoleService.PendingErasure;
 import oneday.staff.StaffConsoleService.ReportAction;
 import oneday.staff.StaffConsoleService.ReportItem;
 import oneday.staff.StaffConsoleService.ReviewItem;
@@ -62,6 +63,11 @@ public class StaffController {
 	ReportItem resolve(@AuthenticationPrincipal Jwt jwt, @PathVariable String reportId,
 			@Valid @RequestBody ResolveReportRequest request) {
 		return console.resolve(jwt.getSubject(), reportId, request.action(), request.note());
+	}
+
+	@GetMapping("/erasures")
+	List<PendingErasure> pendingErasures(@AuthenticationPrincipal Jwt jwt) {
+		return console.pendingErasures(jwt.getSubject());
 	}
 
 	@PostMapping("/accounts/{userId}/reinstate")

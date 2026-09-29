@@ -32,7 +32,20 @@ public class AccountAdministration {
 
 	@Transactional(readOnly = true)
 	public List<User> awaitingReview() {
-		return users.findByVerificationStatusOrderByCreatedAtAsc(VerificationStatus.MANUAL_REVIEW);
+		return users.findByVerificationStatusOrderByCreatedAtAsc(VerificationStatus.MANUAL_REVIEW)
+			.stream()
+			.filter(u -> !u.isDeactivated())
+			.toList();
+	}
+
+	@Transactional
+	public void deactivateForErasure(String userId) {
+		require(userId).deactivateForErasure(clock.instant());
+	}
+
+	@Transactional(readOnly = true)
+	public List<User> pendingErasures() {
+		return users.findByErasureRequestedAtIsNotNullOrderByErasureRequestedAtAsc();
 	}
 
 	@Transactional(readOnly = true)
@@ -68,6 +81,9 @@ public class AccountAdministration {
 	@Transactional
 	public User reinstate(String userId) {
 		User user = require(userId);
+		if (user.isDeactivated()) {
+			throw ApiException.conflict("ERASURE_PENDING", "The holder asked for this account to be erased");
+		}
 		user.reinstate();
 		return user;
 	}

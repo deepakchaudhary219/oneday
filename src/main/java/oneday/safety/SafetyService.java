@@ -1,8 +1,10 @@
 package oneday.safety;
 
 import java.time.Clock;
+import java.time.Instant;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import oneday.common.ApiException;
@@ -36,8 +38,11 @@ public class SafetyService {
 
 	private final Clock clock;
 
+	private final SafetyProperties safetyProperties;
+
 	public SafetyService(BlockRepository blocks, ReportRepository reports, MomentService moments,
-			SignalService signals, ConnectionService connections, UserGuard guard, Clock clock) {
+			SignalService signals, ConnectionService connections, UserGuard guard, Clock clock,
+			SafetyProperties safetyProperties) {
 		this.blocks = blocks;
 		this.reports = reports;
 		this.moments = moments;
@@ -45,6 +50,7 @@ public class SafetyService {
 		this.connections = connections;
 		this.guard = guard;
 		this.clock = clock;
+		this.safetyProperties = safetyProperties;
 	}
 
 	/**
@@ -122,6 +128,25 @@ public class SafetyService {
 			throw ApiException.conflict("REPORT_CLOSED", "This report has already been resolved");
 		}
 		return report;
+	}
+
+	/**
+	 * Why this account's records must be kept even if its holder asks for erasure, or empty if they need
+	 * not be: an open P0 report (possible minor, intimate imagery, threats), or an enforcement action within
+	 * the evidence-retention period.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<String> holdReason(String userId) {
+		if (reports.existsByReportedIdAndPriorityAndStatusIn(userId, ReportCategory.Priority.P0,
+				List.of(Report.Status.OPEN, Report.Status.IN_REVIEW))) {
+			return Optional.of("Open P0 safety report");
+		}
+		Instant since = clock.instant().minus(safetyProperties.evidenceRetention());
+		return reports
+			.findFirstByReportedIdAndResolutionAndResolvedAtAfterOrderByResolvedAtDesc(userId,
+					Report.Resolution.SUSPENDED, since)
+			.map(r -> "Enforcement evidence retained until "
+					+ r.getResolvedAt().plus(safetyProperties.evidenceRetention()));
 	}
 
 	/** Erasure: remove blocks involving the user; keep reports but detach the reporter's identity. */

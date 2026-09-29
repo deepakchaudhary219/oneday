@@ -52,6 +52,12 @@ public class ProfileService {
 		return profiles.findById(userId).orElseThrow(() -> ApiException.notFound("Profile"));
 	}
 
+	/** For data export: also works for suspended accounts, which keep their data rights. */
+	@Transactional(readOnly = true)
+	public ProfileView exportView(String userId) {
+		return ProfileView.of(require(userId), guard.requireExisting(userId));
+	}
+
 	@Transactional(readOnly = true)
 	public ProfileView me(String userId) {
 		User user = guard.requireActive(userId);

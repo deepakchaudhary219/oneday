@@ -20,13 +20,6 @@ import org.junit.jupiter.api.Test;
 /** Trust & Safety console: nobody is stuck in manual review, and every report reaches a human. */
 class StaffConsoleIntegrationTest extends ApiTestSupport {
 
-	/** Inserts a staff row and returns a fresh token carrying the staff scopes. */
-	private String promote(String token, String role) throws Exception {
-		jdbc.update("insert into staff_members (user_id, role, granted_at) values (?, ?, ?)", userIdOf(token), role,
-				java.sql.Timestamp.from(Instant.now()));
-		return verify(token, "dev-pass");
-	}
-
 	@Test
 	void staffRoutesAreClosedToEveryoneElse() throws Exception {
 		String member = verifiedUser("Member");

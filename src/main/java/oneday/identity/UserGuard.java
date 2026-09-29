@@ -22,12 +22,21 @@ public class UserGuard {
 	}
 
 	public User requireActive(String userId) {
-		User user = users.findById(userId)
-			.orElseThrow(() -> ApiException.unauthorized("ACCOUNT_NOT_FOUND", "Account no longer exists"));
+		User user = requireExisting(userId);
 		if (!user.isActive()) {
 			throw ApiException.forbidden("ACCOUNT_SUSPENDED", "This account is suspended");
 		}
 		return user;
+	}
+
+	/**
+	 * The account exists from its holder's point of view: suspended accounts pass (they keep data rights),
+	 * accounts deactivated for erasure answer exactly like deleted ones.
+	 */
+	public User requireExisting(String userId) {
+		return users.findById(userId)
+			.filter(u -> !u.isDeactivated())
+			.orElseThrow(() -> ApiException.unauthorized("ACCOUNT_NOT_FOUND", "Account no longer exists"));
 	}
 
 	/** The subset of {@code userIds} whose accounts are active and verified (safe to show or reach). */

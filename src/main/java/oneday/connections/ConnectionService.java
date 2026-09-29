@@ -118,6 +118,12 @@ public class ConnectionService {
 		connections.findByUserAAndUserB(lo, hi).filter(Connection::isActive).ifPresent(c -> c.end(clock.instant()));
 	}
 
+	/** Ends every active connection silently (the account is going away). Records are kept. */
+	@Transactional
+	public void endAllFor(String userId) {
+		active(userId).forEach(c -> c.end(clock.instant()));
+	}
+
 	@Transactional
 	public void deleteAll(List<Connection> toDelete) {
 		connections.deleteAll(toDelete);

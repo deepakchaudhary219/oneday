@@ -92,6 +92,13 @@ public abstract class ApiTestSupport {
 		return verify(register(displayName), "dev-pass");
 	}
 
+	/** Inserts a staff row and returns a fresh token carrying the staff scopes. */
+	protected String promote(String token, String role) throws Exception {
+		jdbc.update("insert into staff_members (user_id, role, granted_at) values (?, ?, ?)", userIdOf(token), role,
+				java.sql.Timestamp.from(Instant.now()));
+		return verify(token, "dev-pass");
+	}
+
 	protected static String userIdOf(String jwt) {
 		String payload = new String(Base64.getUrlDecoder().decode(jwt.split("\\.")[1]), StandardCharsets.UTF_8);
 		return JsonPath.read(payload, "$.sub");

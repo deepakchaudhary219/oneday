@@ -51,6 +51,12 @@ public class User {
 	@Column(nullable = false)
 	private Instant createdAt;
 
+	/** Set when erasure was requested but deferred by a safety hold. */
+	private Instant erasureRequestedAt;
+
+	/** The released email/phone, kept only while evidence is held (never used for login or lookup). */
+	private String heldIdentifiers;
+
 	protected User() {
 	}
 
@@ -95,12 +101,36 @@ public class User {
 		this.verificationStatus = VerificationStatus.UNVERIFIED;
 	}
 
+	/** No-op for an account awaiting erasure: it must keep looking deleted (the enforcement is on record). */
 	public void suspend() {
-		this.accountStatus = AccountStatus.SUSPENDED;
+		if (!isDeactivated()) {
+			this.accountStatus = AccountStatus.SUSPENDED;
+		}
 	}
 
 	public void reinstate() {
 		this.accountStatus = AccountStatus.ACTIVE;
+	}
+
+	/**
+	 * Deferred erasure: the account disappears now and its email/phone are released (so the person can
+	 * even sign up again), while the records stay for the safety review.
+	 */
+	public void deactivateForErasure(Instant now) {
+		this.accountStatus = AccountStatus.DEACTIVATED;
+		this.erasureRequestedAt = now;
+		this.heldIdentifiers = "email=" + (email == null ? "" : email) + ";phone=" + (phone == null ? "" : phone);
+		this.email = null;
+		this.phone = null;
+		this.passwordHash = null;
+	}
+
+	public boolean isDeactivated() {
+		return accountStatus == AccountStatus.DEACTIVATED;
+	}
+
+	public Instant getErasureRequestedAt() {
+		return erasureRequestedAt;
 	}
 
 	public boolean isVerified() {
