@@ -54,28 +54,59 @@ public class AuthService {
 	 */
 	@Transactional
 	public IssuedToken register(RegisterRequest request, String clientIp) {
+		checkSignupAllowed(clientIp, request.dateOfBirth(), request.consentVersion());
+		String email = request.email().trim().toLowerCase(Locale.ROOT);
+		if (users.existsByEmail(email)) {
+			throw ApiException.conflict("EMAIL_TAKEN", "An account with this email already exists");
+		}
+		User user = users.save(User.withEmail(email, passwordEncoder.encode(request.password()), request.dateOfBirth(),
+				request.consentVersion(), clock.instant()));
+		profiles.create(user.getId(), request.displayName());
+		return tokens.issue(user);
+	}
+
+	/**
+	 * Signup by a phone number the caller has just proven they control (see {@link OtpService}). Runs inside
+	 * the OTP transaction and rejects before writing anything, so a refusal must not poison that
+	 * transaction (it still has to record the attempt).
+	 */
+	@Transactional(noRollbackFor = ApiException.class)
+	public IssuedToken registerPhone(String phone, LocalDate dateOfBirth, String displayName, String consentVersion,
+			String clientIp) {
+		checkSignupAllowed(clientIp, dateOfBirth, consentVersion);
+		if (users.existsByPhone(phone)) {
+			throw ApiException.conflict("PHONE_TAKEN", "An account with this phone number already exists");
+		}
+		User user = users.save(User.withPhone(phone, dateOfBirth, consentVersion, clock.instant()));
+		profiles.create(user.getId(), displayName);
+		return tokens.issue(user);
+	}
+
+	@Transactional(readOnly = true, noRollbackFor = ApiException.class)
+	public java.util.Optional<IssuedToken> loginPhone(String phone) {
+		return users.findByPhone(phone).map(user -> {
+			if (!user.isActive()) {
+				throw ApiException.forbidden("ACCOUNT_SUSPENDED", "This account is suspended");
+			}
+			return tokens.issue(user);
+		});
+	}
+
+	private void checkSignupAllowed(String clientIp, LocalDate dateOfBirth, String consentVersion) {
 		if (!rateLimiter.tryAcquire("register:" + clientIp, properties.registration().perIpPerHour(),
 				Duration.ofHours(1))) {
 			throw ApiException.tooManyRequests("SIGNUP_RATE_LIMITED", "Too many signups from this network, try later");
 		}
 		LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
-		if (request.dateOfBirth().isAfter(today) || Period.between(request.dateOfBirth(), today).getYears() > 120) {
+		if (dateOfBirth.isAfter(today) || Period.between(dateOfBirth, today).getYears() > 120) {
 			throw ApiException.badRequest("INVALID_DATE_OF_BIRTH", "Please enter a real date of birth");
 		}
-		if (Period.between(request.dateOfBirth(), today).getYears() < ADULT_AGE) {
+		if (Period.between(dateOfBirth, today).getYears() < ADULT_AGE) {
 			throw ApiException.unprocessable("UNDER_AGE", "OneDay is only for adults aged 18 and over");
 		}
-		if (!properties.registration().currentConsentVersion().equals(request.consentVersion())) {
+		if (!properties.registration().currentConsentVersion().equals(consentVersion)) {
 			throw ApiException.badRequest("CONSENT_OUTDATED", "Please review and accept the current privacy notice");
 		}
-		String email = request.email().trim().toLowerCase(Locale.ROOT);
-		if (users.existsByEmail(email)) {
-			throw ApiException.conflict("EMAIL_TAKEN", "An account with this email already exists");
-		}
-		User user = users.save(new User(email, passwordEncoder.encode(request.password()), request.dateOfBirth(),
-				request.consentVersion(), clock.instant()));
-		profiles.create(user.getId(), request.displayName());
-		return tokens.issue(user);
 	}
 
 	@Transactional
@@ -86,7 +117,7 @@ public class AuthService {
 	@Transactional(readOnly = true)
 	public IssuedToken login(LoginRequest request) {
 		User user = users.findByEmail(request.email().trim().toLowerCase(Locale.ROOT))
-			.filter(u -> passwordEncoder.matches(request.password(), u.getPasswordHash()))
+			.filter(u -> u.getPasswordHash() != null && passwordEncoder.matches(request.password(), u.getPasswordHash()))
 			.orElseThrow(() -> ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect"));
 		if (!user.isActive()) {
 			throw ApiException.forbidden("ACCOUNT_SUSPENDED", "This account is suspended");

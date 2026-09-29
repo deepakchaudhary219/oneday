@@ -19,10 +19,13 @@ public class User {
 	@Id
 	private String id;
 
-	@Column(nullable = false, unique = true)
+	/** Email or phone (E.164) identifies the account; phone-only accounts have no password. */
+	@Column(unique = true)
 	private String email;
 
-	@Column(nullable = false)
+	@Column(unique = true)
+	private String phone;
+
 	private String passwordHash;
 
 	@Column(nullable = false)
@@ -51,9 +54,11 @@ public class User {
 	protected User() {
 	}
 
-	public User(String email, String passwordHash, LocalDate dateOfBirth, String consentVersion, Instant now) {
+	private User(String email, String phone, String passwordHash, LocalDate dateOfBirth, String consentVersion,
+			Instant now) {
 		this.id = Ids.newId();
 		this.email = email;
+		this.phone = phone;
 		this.passwordHash = passwordHash;
 		this.dateOfBirth = dateOfBirth;
 		this.accountStatus = AccountStatus.ACTIVE;
@@ -61,6 +66,15 @@ public class User {
 		this.consentVersion = consentVersion;
 		this.consentedAt = now;
 		this.createdAt = now;
+	}
+
+	public static User withEmail(String email, String passwordHash, LocalDate dateOfBirth, String consentVersion,
+			Instant now) {
+		return new User(email, null, passwordHash, dateOfBirth, consentVersion, now);
+	}
+
+	public static User withPhone(String phone, LocalDate dateOfBirth, String consentVersion, Instant now) {
+		return new User(null, phone, null, dateOfBirth, consentVersion, now);
 	}
 
 	public void markVerified(Instant now) {
@@ -103,6 +117,10 @@ public class User {
 
 	public String getEmail() {
 		return email;
+	}
+
+	public String getPhone() {
+		return phone;
 	}
 
 	public String getPasswordHash() {

@@ -75,9 +75,10 @@ public class PrivacyService {
 	public Map<String, Object> export(String userId) {
 		User user = guard.requireActive(userId);
 		Map<String, Object> data = new LinkedHashMap<>();
-		data.put("account", Map.of("email", user.getEmail(), "dateOfBirth", user.getDateOfBirth(), "createdAt",
-				user.getCreatedAt(), "verificationStatus", user.getVerificationStatus(), "consentVersion",
-				user.getConsentVersion(), "consentedAt", user.getConsentedAt()));
+		data.put("account", row("email", user.getEmail(), "phone", user.getPhone(), "dateOfBirth",
+				user.getDateOfBirth(), "createdAt", user.getCreatedAt(), "verificationStatus",
+				user.getVerificationStatus(), "consentVersion", user.getConsentVersion(), "consentedAt",
+				user.getConsentedAt()));
 		data.put("profile", profiles.me(userId));
 		data.put("location", locations.current(userId).orElse(null));
 		data.put("moments", moments.allBy(userId)
