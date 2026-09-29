@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -105,8 +106,14 @@ class MediaIntegrationTest extends ApiTestSupport {
 		String asha = verifiedUser("Asha");
 		String first = upload(asha, "PHOTO", "image/jpeg");
 		String momentId = JsonPath.read(body(postAs(asha, "/moments", friendsOnly("PHOTO", first))), "$.id");
+		String view = JsonPath.read(body(getAs(asha, "/moments/" + momentId)), "$.mediaUrl");
+		String path = view.substring("http://localhost:8080".length());
+		mvc.perform(get(path)).andExpect(status().isOk());
+		mvc.perform(get(path.replaceAll("sig=[^&]+", "sig=forged"))).andExpect(status().isForbidden());
 		deleteAs(asha, "/moments/" + momentId).andExpect(status().isNoContent());
 		assertThat(storage.deletedKeys()).contains(first, first + ".preview.mp4");
+		// Like S3: the still-valid signed URL now finds nothing.
+		mvc.perform(get(path)).andExpect(status().isNotFound());
 
 		String second = upload(asha, "PHOTO", "image/jpeg");
 		postAs(asha, "/moments", friendsOnly("PHOTO", second)).andExpect(status().isCreated());

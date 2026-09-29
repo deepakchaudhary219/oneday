@@ -72,9 +72,11 @@ RAVI2=$(echo "$RENEWED" | jq -r '.token // empty')
 [ "$(code "$B/auth/sessions" -H "Authorization: Bearer $RAVI2")" = 401 ] || fail "token still works after sign-out"
 
 [ "$(code -X DELETE "$B/privacy/account?confirm=DELETE" -H "Authorization: Bearer $ASHA")" = 204 ] || fail "erasure"
+# The signed URL is still valid, so a refusal means the object is gone: stores answer 404, or 403 when the
+# signer may not list the bucket (AWS without s3:ListBucket).
 GONE=
 for _ in $(seq 1 10); do
-  [ "$(code "$VIEW")" = 404 ] && GONE=yes && break
+  case "$(code "$VIEW")" in 404|403) GONE=yes; break ;; esac
   sleep 1
 done
 [ -n "$GONE" ] || fail "erased media is still stored"

@@ -94,10 +94,13 @@ public class DevMediaStorage implements MediaStorage {
 		return true;
 	}
 
-	Optional<StoredObject> serve(String objectKey, long expires, String signature) {
-		if (!valid(sign("GET", objectKey, expires, ""), signature, expires)) {
-			return Optional.empty();
-		}
+	/** Like S3: a bad or expired signature is refused (403) before the key is even looked at. */
+	boolean validView(String objectKey, long expires, String signature) {
+		return valid(sign("GET", objectKey, expires, ""), signature, expires);
+	}
+
+	/** Like S3: a validly signed request for a key that isn't there (never uploaded, or deleted) is a 404. */
+	Optional<StoredObject> find(String objectKey) {
 		return Optional.ofNullable(objects.get(objectKey));
 	}
 

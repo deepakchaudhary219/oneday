@@ -83,22 +83,15 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The same three commands the README gives developers, so that path can't rot.
       - name: Throwaway secrets for the stack
-        run: |
-          {
-            echo "MYSQL_PASSWORD=$(openssl rand -hex 16)"
-            echo "REDIS_PASSWORD=$(openssl rand -hex 16)"
-            echo "ONEDAY_JWT_SECRET=$(openssl rand -base64 48)"
-            echo "ONEDAY_LOCATION_SECRET=$(openssl rand -base64 48)"
-            echo "MEDIA_ACCESS_KEY=oneday$(openssl rand -hex 6)"
-            echo "MEDIA_SECRET_KEY=$(openssl rand -hex 20)"
-          } > .env
+        run: scripts/new-env.sh
 
       - name: Build and start the stack
         run: docker compose up --build --detach --wait --wait-timeout 300
 
-      - name: Smoke test
-        run: scripts/smoke-test.sh http://localhost:8080
+      - name: Smoke test (in its own container)
+        run: docker compose run --rm smoke
 
       - name: Stack logs
         if: failure()

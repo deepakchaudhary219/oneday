@@ -41,13 +41,16 @@ See [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) §7.
 
 ### Run locally
 
-Requirements: JDK 25 (the code also compiles and tests on JDK 21) and MySQL 8.4.
+Requirements: JDK 25 (the code also compiles and tests on JDK 21) and MySQL 8.4. No S3, Redis or ffmpeg is needed: the `dev` profile stands in for them.
 
 ```bash
-# MySQL on localhost:3306 (root/root by default; override with ONEDAY_DB_URL / ONEDAY_DB_USER / ONEDAY_DB_PASSWORD)
-SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
+# MySQL in Docker on localhost:3306 (the dev defaults are root/root; override with ONEDAY_DB_URL / ONEDAY_DB_USER / ONEDAY_DB_PASSWORD)
+docker run -d --name oneday-mysql -p 3306:3306 -e MYSQL_ROOT_PASSWORD=root mysql:8.4
+SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run      # Windows: $env:SPRING_PROFILES_ACTIVE="dev"; .\mvnw.cmd spring-boot:run
 # API docs: http://localhost:8080/swagger-ui.html
 ```
+
+In IntelliJ, run `OnedayApplication` with the active profile `dev` (Run configuration → Active profiles). If port 3306 is taken by a local MySQL, map another port (`-p 3307:3306`) and set `ONEDAY_DB_URL=jdbc:mysql://localhost:3307/oneday?createDatabaseIfNotExist=true`.
 
 The `dev` profile provides local-only secrets and local stand-ins:
 - **Liveness:** a deterministic dev verifier that accepts the session tokens `dev-pass`, `dev-low-confidence` and `dev-looks-minor`.
@@ -77,13 +80,24 @@ Any other deployment **must** set:
 
 ### Run the whole stack in Docker
 
+Only Docker is needed on the machine: the build happens inside Docker, and the S3-compatible store is a container too (no AWS account, no MinIO).
+
 ```bash
-cp .env.example .env          # fill in every value, e.g. with `openssl rand -base64 48`
-docker compose up --build     # API :8080, MySQL 8.4, Redis, SeaweedFS (S3 API on :8333)
-scripts/smoke-test.sh         # sign-up -> signed upload -> metadata stripped -> reveal -> erasure
+scripts/new-env.sh               # writes .env with random secrets
+docker compose up --build -d     # API :8080, MySQL 8.4, Redis, SeaweedFS (S3 API on :8333)
+docker compose run --rm smoke    # sign-up -> signed upload -> metadata stripped -> reveal -> sessions -> erasure
 ```
 
-The image (`Dockerfile`) is a JRE 25 runtime with ffmpeg, running as a non-root user. The compose stack uses the `redis` profile, real S3 signatures against SeaweedFS (MinIO no longer publishes community images), and the `dev` SMS, liveness and push providers so the loop works offline. The smoke test is the same one CI runs.
+On Windows (PowerShell):
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\new-env.ps1
+docker compose up --build -d
+docker compose run --rm smoke
+docker compose logs -f api       # follow the API log; docker compose down -v removes everything
+```
+
+The image (`Dockerfile`) is a JRE 25 runtime with ffmpeg, running as a non-root user. The compose stack uses the `redis` profile, real S3 signatures against SeaweedFS (MinIO no longer publishes community images), and the `dev` SMS, liveness and push providers so the loop works offline: OTP codes and pushes appear in `docker compose logs api`. The smoke test runs in its own container, so it needs no bash, curl or jq on the host. It is the same test CI runs. If you regenerate `.env`, run `docker compose down -v` first so MySQL and Redis start with the new passwords.
 
 ### Test
 

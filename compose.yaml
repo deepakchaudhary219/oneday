@@ -2,8 +2,9 @@
 # S3-compatible store (SeaweedFS) for media. SMS, liveness and push use the 'dev' providers so the whole
 # loop works offline; swap them for real providers in a deployment.
 #
-#   cp .env.example .env      # fill in every value
-#   docker compose up --build
+#   scripts/new-env.sh        # or on Windows: powershell -ExecutionPolicy Bypass -File scripts\new-env.ps1
+#   docker compose up --build -d
+#   docker compose run --rm smoke
 #
 # The API listens on http://localhost:8080; signed media URLs point at http://localhost:8333.
 name: oneday
@@ -77,6 +78,24 @@ services:
       - "8333:8333"
     volumes:
       - media-data:/data
+
+  # End-to-end check that needs nothing on the host but Docker (Windows included):
+  #   docker compose run --rm smoke
+  smoke:
+    profiles: ["smoke"]
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM ubuntu:24.04
+        RUN apt-get update && apt-get install -y --no-install-recommends curl jq socat \
+          && rm -rf /var/lib/apt/lists/*
+        COPY scripts/smoke-test.sh /smoke-test.sh
+        RUN sed -i 's/\r$$//' /smoke-test.sh && chmod +x /smoke-test.sh
+    depends_on:
+      api:
+        condition: service_started
+    # Signed media URLs name the store the way phones reach it (localhost:8333), so forward that port to it.
+    entrypoint: ["bash", "-c", "socat TCP-LISTEN:8333,fork,reuseaddr TCP:media:8333 & exec /smoke-test.sh http://api:8080"]
 
 configs:
   s3-identities:

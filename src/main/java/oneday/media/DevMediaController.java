@@ -39,9 +39,13 @@ class DevMediaController {
 
 	@GetMapping("/**")
 	ResponseEntity<byte[]> view(HttpServletRequest request, @RequestParam long expires, @RequestParam String sig) {
-		return storage.serve(objectKey(request), expires, sig)
+		String key = objectKey(request);
+		if (!storage.validView(key, expires, sig)) {
+			return ResponseEntity.status(HttpStatus.FORBIDDEN).build();
+		}
+		return storage.find(key)
 			.map(o -> ResponseEntity.ok().contentType(MediaType.parseMediaType(o.contentType())).body(o.bytes()))
-			.orElseGet(() -> ResponseEntity.status(HttpStatus.FORBIDDEN).build());
+			.orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND).build());
 	}
 
 	private static String objectKey(HttpServletRequest request) {
