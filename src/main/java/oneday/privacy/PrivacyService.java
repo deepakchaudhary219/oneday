@@ -1,0 +1,139 @@
+package oneday.privacy;
+
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+
+import oneday.chat.ChatService;
+import oneday.connections.Connection;
+import oneday.connections.ConnectionService;
+import oneday.geo.LocationService;
+import oneday.identity.AuthService;
+import oneday.identity.User;
+import oneday.identity.UserGuard;
+import oneday.moments.MomentService;
+import oneday.profile.ProfileService;
+import oneday.safety.SafetyService;
+import oneday.signals.SignalService;
+import oneday.verification.VerificationService;
+
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * Self-service data rights (DPDP Act / GDPR; blueprint §47.5): export everything tied to the account,
+ * or erase it, without a support ticket. The privacy claims elsewhere depend on this being easy.
+ */
+@Service
+public class PrivacyService {
+
+	private final UserGuard guard;
+
+	private final AuthService accounts;
+
+	private final ProfileService profiles;
+
+	private final LocationService locations;
+
+	private final MomentService moments;
+
+	private final SignalService signals;
+
+	private final ConnectionService connections;
+
+	private final ChatService chat;
+
+	private final SafetyService safety;
+
+	private final VerificationService verification;
+
+	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
+			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
+			SafetyService safety, VerificationService verification) {
+		this.guard = guard;
+		this.accounts = accounts;
+		this.profiles = profiles;
+		this.locations = locations;
+		this.moments = moments;
+		this.signals = signals;
+		this.connections = connections;
+		this.chat = chat;
+		this.safety = safety;
+		this.verification = verification;
+	}
+
+	/** Everything we hold about the user. Other people's identities are not included. */
+	@Transactional(readOnly = true)
+	public Map<String, Object> export(String userId) {
+		User user = guard.requireActive(userId);
+		Map<String, Object> data = new LinkedHashMap<>();
+		data.put("account", Map.of("email", user.getEmail(), "dateOfBirth", user.getDateOfBirth(), "createdAt",
+				user.getCreatedAt(), "verificationStatus", user.getVerificationStatus(), "consentVersion",
+				user.getConsentVersion(), "consentedAt", user.getConsentedAt()));
+		data.put("profile", profiles.me(userId));
+		data.put("location", locations.current(userId).orElse(null));
+		data.put("moments", moments.allBy(userId)
+			.stream()
+			.map(m -> row("id", m.getId(), "kind", m.getKind(), "caption", m.getCaption(), "activity",
+					m.getActivityTag(), "shareScope", m.getShareScope(), "area", m.getCell(), "createdAt",
+					m.getCreatedAt(), "expiresAt", m.getExpiresAt()))
+			.toList());
+		data.put("signalsSent", signals.allSentBy(userId)
+			.stream()
+			.map(s -> row("momentId", s.getMomentId(), "reaction", s.getReaction(), "activityRef",
+					s.getActivityRef(), "sentAt", s.getCreatedAt()))
+			.toList());
+		data.put("signalsReceived", signals.allReceivedBy(userId)
+			.stream()
+			.map(s -> row("reaction", s.getReaction(), "activityRef", s.getActivityRef(), "receivedAt",
+					s.getCreatedAt(), "status", s.getStatus()))
+			.toList());
+		data.put("connections", connections.all(userId)
+			.stream()
+			.map(c -> row("id", c.getId(), "origin", c.getOrigin(), "state", c.getState(), "since",
+					c.getCreatedAt(), "youSparked", c.hasSparked(userId)))
+			.toList());
+		data.put("messagesSent", chat.sentBy(userId)
+			.stream()
+			.map(m -> row("conversationId", m.getConversationId(), "body", m.getBody(), "sentAt", m.getCreatedAt()))
+			.toList());
+		data.put("blocksMade", safety.blocksMadeBy(userId).stream().map(b -> row("at", b.getCreatedAt())).toList());
+		data.put("reportsFiled", safety.reportsFiledBy(userId)
+			.stream()
+			.map(r -> row("category", r.getCategory(), "status", r.getStatus(), "at", r.getCreatedAt()))
+			.toList());
+		data.put("verificationAttempts", verification.attemptsBy(userId)
+			.stream()
+			.map(a -> row("outcome", a.getOutcome(), "at", a.getCreatedAt()))
+			.toList());
+		return data;
+	}
+
+	/**
+	 * Erases the account and everything attached to it. Conversations are removed for both participants.
+	 * Reports the user filed are kept with the reporter detached; reports about the user are retained as
+	 * required for safety and legal obligations.
+	 */
+	@Transactional
+	public void erase(String userId) {
+		guard.requireActive(userId);
+		List<Connection> all = connections.all(userId);
+		chat.deleteForConnections(all.stream().map(Connection::getId).toList());
+		connections.deleteAll(all);
+		signals.deleteInvolving(userId);
+		moments.deleteAllBy(userId);
+		locations.forget(userId);
+		safety.forget(userId);
+		verification.forget(userId);
+		profiles.delete(userId);
+		accounts.deleteAccount(userId);
+	}
+
+	private static Map<String, Object> row(Object... keyValues) {
+		Map<String, Object> row = new LinkedHashMap<>();
+		for (int i = 0; i < keyValues.length; i += 2) {
+			row.put((String) keyValues[i], keyValues[i + 1]);
+		}
+		return row;
+	}
+}
