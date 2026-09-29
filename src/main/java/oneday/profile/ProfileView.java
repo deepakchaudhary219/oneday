@@ -20,13 +20,15 @@ public record ProfileView(
 		boolean discretionMode,
 		int discoveryRadiusKm,
 		int pulseHour,
+		String timeZone,
 		boolean safeZoneSet,
 		VerificationStatus verificationStatus) {
 
 	static ProfileView of(Profile p, User user) {
 		return new ProfileView(p.getDisplayName(), p.getBio(), p.getActivities(), p.getValues(), p.getLanguages(),
 				p.getHomeRegion(), p.getGender(), p.getInterestedIn(), p.getAccountPrivacy(), p.isDatingLens(),
-				p.isDiscretionMode(), p.getDiscoveryRadiusKm(), p.getPulseHour(), p.getSafeZonePrefix() != null,
+				p.isDiscretionMode(), p.getDiscoveryRadiusKm(), p.getPulseHour(), p.getTimeZone(),
+				p.getSafeZonePrefix() != null,
 				user.getVerificationStatus());
 	}
 }

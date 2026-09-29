@@ -13,6 +13,7 @@ import oneday.identity.AuthService;
 import oneday.identity.User;
 import oneday.identity.UserGuard;
 import oneday.media.MediaService;
+import oneday.notify.NotificationService;
 import oneday.moments.MomentService;
 import oneday.profile.ProfileService;
 import oneday.safety.SafetyService;
@@ -57,10 +58,12 @@ public class PrivacyService {
 
 	private final AccountAdministration administration;
 
+	private final NotificationService notifications;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
-			AccountAdministration administration) {
+			AccountAdministration administration, NotificationService notifications) {
 		this.guard = guard;
 		this.accounts = accounts;
 		this.profiles = profiles;
@@ -74,6 +77,7 @@ public class PrivacyService {
 		this.staff = staff;
 		this.media = media;
 		this.administration = administration;
+		this.notifications = notifications;
 	}
 
 	/** Everything we hold about the user. Other people's identities are not included. */
@@ -117,6 +121,8 @@ public class PrivacyService {
 			.stream()
 			.map(r -> row("category", r.getCategory(), "status", r.getStatus(), "at", r.getCreatedAt()))
 			.toList());
+		data.put("devices", notifications.devicesOf(userId));
+		data.put("notices", notifications.notices(userId));
 		data.put("verificationAttempts", verification.attemptsBy(userId)
 			.stream()
 			.map(a -> row("outcome", a.getOutcome(), "at", a.getCreatedAt()))
@@ -169,6 +175,7 @@ public class PrivacyService {
 		safety.forget(userId);
 		verification.forget(userId);
 		staff.forget(userId);
+		notifications.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
 	}

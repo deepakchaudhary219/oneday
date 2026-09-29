@@ -12,6 +12,8 @@ import oneday.common.ApiException;
 import oneday.identity.AccountAdministration;
 import oneday.identity.AccountAdministration.VerificationDecision;
 import oneday.identity.User;
+import oneday.notify.Notice;
+import oneday.notify.NotificationService;
 import oneday.profile.Profile;
 import oneday.profile.ProfileService;
 import oneday.safety.Report;
@@ -50,11 +52,13 @@ public class StaffConsoleService {
 
 	private final StaffProperties properties;
 
+	private final NotificationService notifications;
+
 	private final Clock clock;
 
 	public StaffConsoleService(StaffDirectory directory, StaffRepository staff, StaffActionRepository audit,
 			AccountAdministration accounts, VerificationService verification, SafetyService safety,
-			ProfileService profiles, StaffProperties properties, Clock clock) {
+			ProfileService profiles, StaffProperties properties, NotificationService notifications, Clock clock) {
 		this.directory = directory;
 		this.staff = staff;
 		this.audit = audit;
@@ -63,6 +67,7 @@ public class StaffConsoleService {
 		this.safety = safety;
 		this.profiles = profiles;
 		this.properties = properties;
+		this.notifications = notifications;
 		this.clock = clock;
 	}
 
@@ -107,6 +112,7 @@ public class StaffConsoleService {
 			case SUSPEND_USER -> Report.Resolution.SUSPENDED;
 		};
 		Report report = safety.resolve(reportId, resolution, note, staffId);
+		notifyOutcome(report, action);
 		if (action == ReportAction.SUSPEND_USER) {
 			accounts.suspend(report.getReportedId());
 			record(staffId, "ACCOUNT_SUSPENDED", "USER", report.getReportedId(), "report " + reportId);
@@ -188,6 +194,29 @@ public class StaffConsoleService {
 	}
 
 	// ---- helpers ------------------------------------------------------------------------------------
+
+	/**
+	 * The warned person learns why; the reporter learns that their report was handled, but never the
+	 * specific penalty (that is the reported person's business).
+	 */
+	private void notifyOutcome(Report report, ReportAction action) {
+		if (action == ReportAction.WARN) {
+			notifications.notice(report.getReportedId(), Notice.Kind.WARNING,
+					"Our safety team reviewed a report about your activity (" + describe(report.getCategory())
+							+ ") and found it went against our community guidelines. Please keep OneDay safe and "
+							+ "respectful: repeated issues can lead to suspension.");
+		}
+		if (report.getReporterId() != null) {
+			notifications.notice(report.getReporterId(), Notice.Kind.REPORT_UPDATE, action == ReportAction.DISMISS
+					? "Thanks for your report. We reviewed it and didn't find a breach of our guidelines this time. "
+							+ "You can always block anyone, at any time."
+					: "Thanks for your report. We reviewed it and took action.");
+		}
+	}
+
+	private static String describe(oneday.safety.ReportCategory category) {
+		return category.name().toLowerCase(java.util.Locale.ROOT).replace('_', ' ');
+	}
 
 	private void record(String staffId, String action, String subjectType, String subjectId, String note) {
 		audit.save(new StaffAction(staffId, action, subjectType, subjectId,

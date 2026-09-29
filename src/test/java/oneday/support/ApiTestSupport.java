@@ -45,7 +45,7 @@ public abstract class ApiTestSupport {
 
 	protected static final double BLR_LON = 77.6245;
 
-	private static final List<String> TABLES = List.of("staff_actions", "staff_members", "messages", "conversations", "connections", "signals",
+	private static final List<String> TABLES = List.of("notices", "pulse_deliveries", "devices", "staff_actions", "staff_members", "messages", "conversations", "connections", "signals",
 			"moments", "media_uploads", "user_locations", "blocks", "reports", "verification_attempts", "otp_challenges", "profiles", "users");
 
 	@Autowired

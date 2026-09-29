@@ -68,6 +68,10 @@ public class Profile {
 	@Column(nullable = false)
 	private int pulseHour;
 
+	/** IANA zone for the Local Pulse hour (the pilot city's zone by default). */
+	@Column(nullable = false)
+	private String timeZone;
+
 	/** Geohash-5 prefix; while inside it the user appears only as "nearby area" (blueprint v2 §6.3). */
 	private String safeZonePrefix;
 
@@ -83,6 +87,7 @@ public class Profile {
 		this.accountPrivacy = AccountPrivacy.PUBLIC;
 		this.discoveryRadiusKm = discoveryRadiusKm;
 		this.pulseHour = 19;
+		this.timeZone = "Asia/Kolkata";
 		this.updatedAt = now;
 	}
 
@@ -208,6 +213,14 @@ public class Profile {
 
 	public void setPulseHour(int pulseHour) {
 		this.pulseHour = pulseHour;
+	}
+
+	public String getTimeZone() {
+		return timeZone;
+	}
+
+	public void setTimeZone(String timeZone) {
+		this.timeZone = timeZone;
 	}
 
 	public String getSafeZonePrefix() {

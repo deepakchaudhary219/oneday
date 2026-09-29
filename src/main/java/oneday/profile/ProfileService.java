@@ -122,6 +122,14 @@ public class ProfileService {
 		if (request.pulseHour() != null) {
 			profile.setPulseHour(request.pulseHour());
 		}
+		if (request.timeZone() != null) {
+			try {
+				profile.setTimeZone(java.time.ZoneId.of(request.timeZone().trim()).getId());
+			}
+			catch (java.time.DateTimeException ex) {
+				throw ApiException.badRequest("INVALID_TIME_ZONE", "Use a time zone such as Asia/Kolkata");
+			}
+		}
 		profile.touch(clock.instant());
 		return ProfileView.of(profile, user);
 	}

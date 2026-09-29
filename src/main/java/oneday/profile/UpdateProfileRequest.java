@@ -20,5 +20,6 @@ public record UpdateProfileRequest(
 		Boolean datingLens,
 		Boolean discretionMode,
 		Integer discoveryRadiusKm,
-		@Min(0) @Max(23) Integer pulseHour) {
+		@Min(0) @Max(23) Integer pulseHour,
+		@Size(max = 40) String timeZone) {
 }
