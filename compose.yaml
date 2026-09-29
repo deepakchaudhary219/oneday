@@ -67,7 +67,8 @@ services:
       REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
 
   media:
-    image: chrislusf/seaweedfs:latest
+    # Pinned by digest (4.48): the store's S3 behaviour is part of what the smoke test checks.
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
     command: ["mini", "-dir=/data", "-bucket=oneday-media", "-s3.config=/etc/seaweedfs/s3.json", "-admin.ui=false"]
     configs:
       - source: s3-identities

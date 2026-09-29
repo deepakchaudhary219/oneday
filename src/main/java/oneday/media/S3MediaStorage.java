@@ -19,6 +19,8 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.checksums.RequestChecksumCalculation;
+import software.amazon.awssdk.core.checksums.ResponseChecksumValidation;
 import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.core.sync.ResponseTransformer;
@@ -73,7 +75,12 @@ public class S3MediaStorage implements MediaStorage, DisposableBean {
 			.serviceConfiguration(pathStyle)
 			.httpClient(UrlConnectionHttpClient.create());
 		if (hasText(properties.endpoint())) {
-			clientBuilder.endpointOverride(URI.create(properties.endpoint()));
+			// S3-compatible stores handle the SDK's default streaming checksums (aws-chunked with trailers)
+			// unevenly; SeaweedFS intermittently rejects them. Send checksums only where an API requires one:
+			// the payload is still signed with its SHA-256, so integrity is kept.
+			clientBuilder.endpointOverride(URI.create(properties.endpoint()))
+				.requestChecksumCalculation(RequestChecksumCalculation.WHEN_REQUIRED)
+				.responseChecksumValidation(ResponseChecksumValidation.WHEN_REQUIRED);
 		}
 		// Signed URLs are used by phones, which may reach the store under a different host than we do.
 		String signingEndpoint = hasText(properties.publicEndpoint()) ? properties.publicEndpoint()

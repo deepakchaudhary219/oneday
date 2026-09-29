@@ -21,13 +21,17 @@ done
 [ "$(curl -s "$B/actuator/health" | jq -r .status)" = UP ] || fail "API is not healthy at $B"
 
 signup() {
-  local token
-  token=$(json "$B/auth/register" -d "{\"email\":\"$1-$RANDOM$RANDOM@example.com\",\"password\":\"correct-horse-battery\",\"dateOfBirth\":\"1998-04-12\",\"displayName\":\"$1\",\"consentVersion\":\"2026-09\"}" | jq -r .token)
-  json "$B/verification/liveness" -H "Authorization: Bearer $token" -d '{"sessionToken":"dev-pass"}' | jq -r .token.token
+  local response token
+  response=$(json "$B/auth/register" -d "{\"email\":\"$1-$RANDOM$RANDOM@example.com\",\"password\":\"correct-horse-battery\",\"dateOfBirth\":\"1998-04-12\",\"displayName\":\"$1\",\"consentVersion\":\"2026-09\"}")
+  token=$(echo "$response" | jq -r '.token // empty')
+  [ -n "$token" ] || fail "sign-up: $response"
+  response=$(json "$B/verification/liveness" -H "Authorization: Bearer $token" -d '{"sessionToken":"dev-pass"}')
+  token=$(echo "$response" | jq -r '.token.token // empty')
+  [ -n "$token" ] || fail "verification: $response"
+  echo "$token"
 }
 ASHA=$(signup asha)
 RAVI=$(signup ravi)
-[ "$ASHA" != null ] && [ "$RAVI" != null ] || fail "sign-up or verification failed"
 for T in "$ASHA" "$RAVI"; do
   [ "$(code -X PUT "$B/location" -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"lat":12.9352,"lon":77.6245}')" = 200 ] || fail "location update"
 done
