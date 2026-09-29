@@ -16,6 +16,9 @@ public interface ReportRepository extends JpaRepository<Report, String> {
 
 	List<Report> findByStatusIn(Collection<Report.Status> statuses);
 
+	long countByPriorityAndStatusInAndCreatedAtBefore(ReportCategory.Priority priority,
+			Collection<Report.Status> statuses, Instant before);
+
 	long countByReportedId(String reportedId);
 
 	boolean existsByReportedIdAndPriorityAndStatusIn(String reportedId, ReportCategory.Priority priority,

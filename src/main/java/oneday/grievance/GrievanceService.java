@@ -9,6 +9,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 
 import oneday.common.ApiException;
+import oneday.common.ProductMetrics;
 import oneday.common.RateLimiter;
 import oneday.grievance.Grievance.Outcome;
 import oneday.identity.UserGuard;
@@ -47,8 +48,11 @@ public class GrievanceService {
 
 	private final Clock clock;
 
+	private final ProductMetrics metrics;
+
 	public GrievanceService(GrievanceRepository grievances, UserGuard guard, RateLimiter rateLimiter,
-			NotificationService notifications, GrievanceProperties properties, Clock clock) {
+			NotificationService notifications, GrievanceProperties properties, Clock clock, ProductMetrics metrics) {
+		this.metrics = metrics;
 		this.grievances = grievances;
 		this.guard = guard;
 		this.rateLimiter = rateLimiter;
@@ -66,6 +70,7 @@ public class GrievanceService {
 		}
 		Grievance grievance = grievances.save(new Grievance(newReference(), userId, category,
 				blankToNull(subjectRef), description.strip(), clock.instant()));
+		metrics.grievanceFiled(category);
 		notifications.notice(userId, Notice.Kind.GRIEVANCE_UPDATE, "We received your grievance "
 				+ grievance.getReference() + " and will respond by " + DAY.format(grievance.getResolveBy()) + " IST.");
 		return GrievanceView.of(grievance);

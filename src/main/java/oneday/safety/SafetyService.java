@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.stream.Stream;
 
 import oneday.common.ApiException;
+import oneday.common.ProductMetrics;
 import oneday.connections.ConnectionService;
 import oneday.identity.UserGuard;
 import oneday.moments.Moment;
@@ -38,11 +39,14 @@ public class SafetyService {
 
 	private final Clock clock;
 
+	private final ProductMetrics metrics;
+
 	private final SafetyProperties safetyProperties;
 
 	public SafetyService(BlockRepository blocks, ReportRepository reports, MomentService moments,
 			SignalService signals, ConnectionService connections, UserGuard guard, Clock clock,
-			SafetyProperties safetyProperties) {
+			SafetyProperties safetyProperties, ProductMetrics metrics) {
+		this.metrics = metrics;
 		this.blocks = blocks;
 		this.reports = reports;
 		this.moments = moments;
@@ -75,6 +79,7 @@ public class SafetyService {
 		String other = resolve(userId, target);
 		Report report = reports.save(new Report(userId, other, category, target.type(),
 				details == null || details.isBlank() ? null : details.strip(), clock.instant()));
+		metrics.reportFiled(report.getPriority());
 		if (alsoBlock) {
 			block(userId, target);
 		}

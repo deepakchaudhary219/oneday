@@ -9,6 +9,7 @@ import javax.crypto.spec.SecretKeySpec;
 import oneday.config.OneDayProperties;
 import oneday.media.MediaProperties;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -27,6 +28,7 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
  * Stateless JWT security. Contact-reaching routes (posting publicly, signalling, revealing, messaging,
@@ -44,9 +46,15 @@ public class SecurityConfig {
 	static final String VERIFIED = "SCOPE_verified";
 
 	@Bean
-	SecurityFilterChain apiSecurity(HttpSecurity http, MediaProperties media) throws Exception {
+	SecurityFilterChain apiSecurity(HttpSecurity http, MediaProperties media,
+			@Value("${management.server.port:}") String managementPort) throws Exception {
 		// The dev object store authorises by URL signature, exactly like pre-signed S3; it only exists in dev.
 		String[] devMedia = "dev".equals(media.provider()) ? new String[] { "/dev-media/**" } : new String[0];
+		// Prometheus scrapes without a token only on a separate management port, which is kept off the public
+		// network; on the public port the metrics need an admin token.
+		RequestMatcher scrapeOnManagementPort = request -> !managementPort.isBlank()
+				&& managementPort.equals(String.valueOf(request.getLocalPort()))
+				&& "/actuator/prometheus".equals(request.getRequestURI());
 		http.csrf(csrf -> csrf.disable())
 			.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(auth -> auth
@@ -60,6 +68,10 @@ public class SecurityConfig {
 				.permitAll()
 				.requestMatchers(HttpMethod.GET, "/grievances/officer")
 				.permitAll()
+				.requestMatchers(scrapeOnManagementPort)
+				.permitAll()
+				.requestMatchers("/actuator/prometheus")
+				.hasAuthority("SCOPE_admin")
 				.requestMatchers(HttpMethod.POST, "/moments", "/media/uploads", "/signals", "/signals/*/reveal",
 						"/conversations/*/messages", "/connections/*/spark")
 				.hasAuthority(VERIFIED)

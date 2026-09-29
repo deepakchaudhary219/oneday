@@ -14,6 +14,7 @@ import java.util.stream.Collectors;
 import oneday.chat.ChatService;
 import oneday.chat.Conversation;
 import oneday.common.ApiException;
+import oneday.common.ProductMetrics;
 import oneday.config.OneDayProperties;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionOrigin;
@@ -62,9 +63,12 @@ public class SignalService {
 
 	private final OneDayProperties.Signals settings;
 
+	private final ProductMetrics metrics;
+
 	public SignalService(SignalRepository signals, MomentService moments, ProfileService profiles,
 			ConnectionService connections, ChatService chat, UserGuard guard, BlockChecker blocks, Clock clock,
-			OneDayProperties properties) {
+			OneDayProperties properties, ProductMetrics metrics) {
+		this.metrics = metrics;
 		this.signals = signals;
 		this.moments = moments;
 		this.profiles = profiles;
@@ -110,6 +114,7 @@ public class SignalService {
 		Instant windowEnd = moment.getCreatedAt().plus(settings.reactionWindow());
 		Signal signal = signals
 			.save(new Signal(senderId, recipientId, momentId, reaction, activityRef, now, windowEnd));
+		metrics.signalSent();
 		return SentSignalView.of(signal);
 	}
 
@@ -168,6 +173,7 @@ public class SignalService {
 		Conversation conversation = chat.openFor(connection, seed);
 		signal.resolve(Signal.Status.REVEALED, now);
 		signals.archivePendingBetween(senderId, recipientId, now);
+		metrics.mutualReveal();
 		return new RevealView(connection.getId(), conversation.getId(), conversation.getSeedContext());
 	}
 

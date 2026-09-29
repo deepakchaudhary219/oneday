@@ -12,6 +12,7 @@ import java.util.HexFormat;
 import java.util.List;
 
 import oneday.common.ApiException;
+import oneday.common.ProductMetrics;
 import oneday.config.OneDayProperties;
 import oneday.identity.User;
 import oneday.identity.UserRepository;
@@ -56,8 +57,11 @@ public class SessionService {
 
 	private final OneDayProperties.Security settings;
 
+	private final ProductMetrics metrics;
+
 	public SessionService(SessionRepository sessions, UserRepository users, TokenService tokens,
-			NotificationService notifications, Clock clock, OneDayProperties properties) {
+			NotificationService notifications, Clock clock, OneDayProperties properties, ProductMetrics metrics) {
+		this.metrics = metrics;
 		this.sessions = sessions;
 		this.users = users;
 		this.tokens = tokens;
@@ -111,6 +115,7 @@ public class SessionService {
 			if (!retry) {
 				session.end(EndReason.REUSE_DETECTED, now);
 				log.warn("Refresh token reuse: ended session {}", session.getId());
+				metrics.refreshTokenReused();
 				notifications.notice(session.getUserId(), Notice.Kind.SECURITY,
 						"We signed out one of your devices because its sign-in was used from two places at once. "
 								+ "If that wasn't you, sign out everywhere and sign in again.");

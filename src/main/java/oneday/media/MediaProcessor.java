@@ -12,6 +12,8 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 
+import oneday.common.ProductMetrics;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.DisposableBean;
@@ -49,8 +51,11 @@ class MediaProcessor implements DisposableBean {
 
 	private final ExecutorService pool;
 
+	private final ProductMetrics metrics;
+
 	MediaProcessor(MediaUploadRepository uploads, ObjectProvider<MediaStorage> storage, PhotoProcessor photos,
-			VideoTranscoder videos, PlatformTransactionManager transactions, Clock clock, MediaProperties properties) {
+			VideoTranscoder videos, PlatformTransactionManager transactions, Clock clock, MediaProperties properties,
+			ProductMetrics metrics) {
 		this.uploads = uploads;
 		this.storage = storage;
 		this.photos = photos;
@@ -61,6 +66,7 @@ class MediaProcessor implements DisposableBean {
 		this.tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
 		this.clock = clock;
 		this.properties = properties;
+		this.metrics = metrics;
 		AtomicInteger n = new AtomicInteger();
 		this.pool = properties.asyncProcessing()
 				? Executors.newFixedThreadPool(2, r -> new Thread(r, "media-worker-" + n.incrementAndGet())) : null;
@@ -115,18 +121,22 @@ class MediaProcessor implements DisposableBean {
 				written.add(upload.getObjectKey());
 			}
 			finish(uploadId, u -> u.markReady(clock.instant()));
+			metrics.mediaProcessed("ready");
 			store.delete(List.of(upload.getIncomingKey()));
 			log.debug("Media {} processed ({} object(s))", uploadId, written.size());
 		}
 		catch (MediaStorage.MissingObjectException ex) {
 			finish(uploadId, u -> u.reject("We didn't receive the file. Please upload it again.", clock.instant()));
+			metrics.mediaProcessed("rejected");
 		}
 		catch (MediaRejectedException ex) {
 			finish(uploadId, u -> u.reject(ex.getMessage(), clock.instant()));
+			metrics.mediaProcessed("rejected");
 			store.delete(List.of(upload.getIncomingKey()));
 		}
 		catch (IOException | RuntimeException ex) {
 			log.warn("Media {} processing failed; will retry", uploadId, ex);
+			metrics.mediaProcessed("failed");
 			finish(uploadId, u -> {
 				if (u.recordFailedAttempt(clock.instant()) >= MAX_ATTEMPTS) {
 					u.reject("We couldn't process that file. Please try again.", clock.instant());

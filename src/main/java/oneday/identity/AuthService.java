@@ -8,6 +8,7 @@ import java.time.ZoneOffset;
 import java.util.Locale;
 
 import oneday.common.ApiException;
+import oneday.common.ProductMetrics;
 import oneday.common.RateLimiter;
 import oneday.config.OneDayProperties;
 import oneday.profile.ProfileService;
@@ -37,8 +38,11 @@ public class AuthService {
 
 	private final OneDayProperties properties;
 
+	private final ProductMetrics metrics;
+
 	public AuthService(UserRepository users, ProfileService profiles, PasswordEncoder passwordEncoder,
-			SessionService sessions, RateLimiter rateLimiter, Clock clock, OneDayProperties properties) {
+			SessionService sessions, RateLimiter rateLimiter, Clock clock, OneDayProperties properties, ProductMetrics metrics) {
+		this.metrics = metrics;
 		this.users = users;
 		this.profiles = profiles;
 		this.passwordEncoder = passwordEncoder;
@@ -128,12 +132,15 @@ public class AuthService {
 		}
 		if (user == null || user.getPasswordHash() == null
 				|| !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+			metrics.login("failure");
 			throw ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect");
 		}
+		metrics.login("success");
 		return sessions.start(user, client.device());
 	}
 
-	private static ApiException tooManyLogins() {
+	private ApiException tooManyLogins() {
+		metrics.login("rate_limited");
 		return ApiException.tooManyRequests("LOGIN_RATE_LIMITED", "Too many sign-in attempts. Try again later.");
 	}
 }

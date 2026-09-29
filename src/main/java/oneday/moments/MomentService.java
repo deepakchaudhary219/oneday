@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Optional;
 
 import oneday.common.ApiException;
+import oneday.common.ProductMetrics;
 import oneday.config.OneDayProperties;
 import oneday.connections.ConnectionService;
 import oneday.geo.GeoCell;
@@ -43,11 +44,14 @@ public class MomentService {
 
 	private final Clock clock;
 
+	private final ProductMetrics metrics;
+
 	private final OneDayProperties.Moments settings;
 
 	public MomentService(MomentRepository moments, LocationService locations, ProfileService profiles,
 			ConnectionService connections, UserGuard guard, BlockChecker blocks, MediaService media, Clock clock,
-			OneDayProperties properties) {
+			OneDayProperties properties, ProductMetrics metrics) {
+		this.metrics = metrics;
 		this.moments = moments;
 		this.locations = locations;
 		this.profiles = profiles;
@@ -93,6 +97,7 @@ public class MomentService {
 				ActivityTags.normalize(request.activityTag()), blankToNull(request.mediaRef()),
 				request.isPreviewAllowed(), request.shareScope(), isText || request.isCapturedLive(), cell, now,
 				now.plus(settings.ttl())));
+		metrics.momentPublished(moment.getKind());
 		return full(moment, profiles.require(userId).firstName());
 	}
 
