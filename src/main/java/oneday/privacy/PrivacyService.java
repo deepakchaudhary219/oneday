@@ -8,6 +8,7 @@ import oneday.chat.ChatService;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionService;
 import oneday.geo.LocationService;
+import oneday.grievance.GrievanceService;
 import oneday.identity.AccountAdministration;
 import oneday.identity.AuthService;
 import oneday.identity.User;
@@ -63,10 +64,13 @@ public class PrivacyService {
 
 	private final SessionService sessions;
 
+	private final GrievanceService grievances;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
-			AccountAdministration administration, NotificationService notifications, SessionService sessions) {
+			AccountAdministration administration, NotificationService notifications, SessionService sessions,
+			GrievanceService grievances) {
 		this.guard = guard;
 		this.accounts = accounts;
 		this.profiles = profiles;
@@ -82,6 +86,7 @@ public class PrivacyService {
 		this.administration = administration;
 		this.notifications = notifications;
 		this.sessions = sessions;
+		this.grievances = grievances;
 	}
 
 	/** Everything we hold about the user. Other people's identities are not included. */
@@ -132,6 +137,12 @@ public class PrivacyService {
 					"ended", s.getEndedAt(), "endReason", s.getEndReason()))
 			.toList());
 		data.put("notices", notifications.notices(userId));
+		data.put("grievances", grievances.filedBy(userId)
+			.stream()
+			.map(g -> row("reference", g.getReference(), "category", g.getCategory(), "description",
+					g.getDescription(), "status", g.getStatus(), "filedAt", g.getCreatedAt(), "response",
+					g.getResponse()))
+			.toList());
 		data.put("verificationAttempts", verification.attemptsBy(userId)
 			.stream()
 			.map(a -> row("outcome", a.getOutcome(), "at", a.getCreatedAt()))
@@ -186,6 +197,7 @@ public class PrivacyService {
 		staff.forget(userId);
 		notifications.forget(userId);
 		sessions.forget(userId);
+		grievances.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
 	}

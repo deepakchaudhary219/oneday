@@ -2,8 +2,10 @@ package oneday.staff;
 
 import java.util.List;
 
+import oneday.grievance.Grievance;
 import oneday.identity.AccountAdministration.VerificationDecision;
 import oneday.staff.StaffConsoleService.AuditItem;
+import oneday.staff.StaffConsoleService.GrievanceItem;
 import oneday.staff.StaffConsoleService.PendingErasure;
 import oneday.staff.StaffConsoleService.ReportAction;
 import oneday.staff.StaffConsoleService.ReportItem;
@@ -11,6 +13,7 @@ import oneday.staff.StaffConsoleService.ReviewItem;
 import oneday.staff.StaffConsoleService.StaffMemberView;
 
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
@@ -65,6 +68,17 @@ public class StaffController {
 		return console.resolve(jwt.getSubject(), reportId, request.action(), request.note());
 	}
 
+	@GetMapping("/grievances")
+	List<GrievanceItem> grievances(@AuthenticationPrincipal Jwt jwt) {
+		return console.grievanceQueue(jwt.getSubject());
+	}
+
+	@PostMapping("/grievances/{grievanceId}/answer")
+	GrievanceItem answer(@AuthenticationPrincipal Jwt jwt, @PathVariable String grievanceId,
+			@Valid @RequestBody AnswerGrievanceRequest request) {
+		return console.answerGrievance(jwt.getSubject(), grievanceId, request.outcome(), request.response());
+	}
+
 	@GetMapping("/erasures")
 	List<PendingErasure> pendingErasures(@AuthenticationPrincipal Jwt jwt) {
 		return console.pendingErasures(jwt.getSubject());
@@ -103,6 +117,9 @@ public class StaffController {
 	}
 
 	record ResolveReportRequest(@NotNull ReportAction action, @Size(max = 500) String note) {
+	}
+
+	record AnswerGrievanceRequest(@NotNull Grievance.Outcome outcome, @NotBlank @Size(max = 2000) String response) {
 	}
 
 	record NoteRequest(@Size(max = 500) String note) {

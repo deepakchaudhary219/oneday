@@ -9,6 +9,8 @@ import java.util.List;
 import java.util.Optional;
 
 import oneday.common.ApiException;
+import oneday.grievance.Grievance;
+import oneday.grievance.GrievanceService;
 import oneday.identity.AccountAdministration;
 import oneday.identity.AccountAdministration.VerificationDecision;
 import oneday.identity.User;
@@ -54,11 +56,14 @@ public class StaffConsoleService {
 
 	private final NotificationService notifications;
 
+	private final GrievanceService grievances;
+
 	private final Clock clock;
 
 	public StaffConsoleService(StaffDirectory directory, StaffRepository staff, StaffActionRepository audit,
 			AccountAdministration accounts, VerificationService verification, SafetyService safety,
-			ProfileService profiles, StaffProperties properties, NotificationService notifications, Clock clock) {
+			ProfileService profiles, StaffProperties properties, NotificationService notifications,
+			GrievanceService grievances, Clock clock) {
 		this.directory = directory;
 		this.staff = staff;
 		this.audit = audit;
@@ -68,6 +73,7 @@ public class StaffConsoleService {
 		this.profiles = profiles;
 		this.properties = properties;
 		this.notifications = notifications;
+		this.grievances = grievances;
 		this.clock = clock;
 	}
 
@@ -119,6 +125,28 @@ public class StaffConsoleService {
 		}
 		record(staffId, "REPORT_" + resolution, "REPORT", reportId, note);
 		return toReportItem(report);
+	}
+
+	// ---- grievances (the Grievance Officer's desk) -------------------------------------------------
+
+	/** Open grievances, nearest deadline first, with overdue ones flagged. */
+	@Transactional(readOnly = true)
+	public List<GrievanceItem> grievanceQueue(String staffId) {
+		directory.require(staffId, StaffRole.MODERATOR);
+		return grievances.openQueue().stream().map(this::toGrievanceItem).toList();
+	}
+
+	/**
+	 * The response goes to the complainant as written, with where to go next if they are not satisfied.
+	 * Reinstating a suspended account after an upheld appeal is a separate, admin-only action.
+	 */
+	@Transactional
+	public GrievanceItem answerGrievance(String staffId, String grievanceId, Grievance.Outcome outcome,
+			String response) {
+		directory.require(staffId, StaffRole.MODERATOR);
+		Grievance grievance = grievances.resolve(grievanceId, outcome, response, staffId);
+		record(staffId, "GRIEVANCE_" + outcome, "GRIEVANCE", grievanceId, grievance.getReference());
+		return toGrievanceItem(grievance);
 	}
 
 	/**
@@ -244,6 +272,13 @@ public class StaffConsoleService {
 				report.getResolution() == null ? null : report.getResolution().name());
 	}
 
+	private GrievanceItem toGrievanceItem(Grievance g) {
+		return new GrievanceItem(g.getId(), g.getReference(), g.getCategory().name(), g.getStatus().name(),
+				g.getUserId(), displayName(g.getUserId()), accounts.require(g.getUserId()).getAccountStatus().name(),
+				g.getSubjectRef(), g.getDescription(), g.getCreatedAt(), g.getResolveBy(),
+				g.isOverdue(clock.instant()), g.getOutcome() == null ? null : g.getOutcome().name());
+	}
+
 	private String displayName(String userId) {
 		return profiles.find(userId).map(Profile::getDisplayName).orElse(null);
 	}
@@ -256,6 +291,11 @@ public class StaffConsoleService {
 	public record ReportItem(String id, String category, String priority, String status, String reportedUserId,
 			String reportedDisplayName, String reporterUserId, String targetType, String details, Instant createdAt,
 			Instant dueAt, boolean overdue, String assigneeId, long reportsAgainstUser, String resolution) {
+	}
+
+	public record GrievanceItem(String id, String reference, String category, String status, String userId,
+			String displayName, String accountStatus, String subjectRef, String description, Instant filedAt,
+			Instant resolveBy, boolean overdue, String outcome) {
 	}
 
 	public record PendingErasure(String userId, String displayName, Instant requestedAt, String holdReason) {

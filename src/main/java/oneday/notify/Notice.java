@@ -22,7 +22,9 @@ public class Notice {
 		/** The outcome of a report you filed. */
 		REPORT_UPDATE,
 		/** Something happened to your sign-ins, e.g. a device was signed out because its session was copied. */
-		SECURITY
+		SECURITY,
+		/** A grievance you filed was received or answered. */
+		GRIEVANCE_UPDATE
 	}
 
 	@Id
