@@ -23,7 +23,15 @@ live story ─► nearby Constellation (Layer 0) ─► Signal (Layer 1, budgete
           ─► Friend-Mode chat ─► private Mutual Spark ─► (block / soft exit at any point)
 ```
 
-Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `identity`, `verification`, `profile`, `geo`, `moments`, `discovery`, `signals`, `connections`, `chat`, `safety`, `pulse`, `privacy`.
+Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `identity`, `verification`, `profile`, `geo`, `moments`, `media`, `discovery`, `signals`, `connections`, `chat`, `safety`, `staff`, `pulse`, `privacy`.
+
+**Milestone 2 so far:**
+- Redis-shared rate limits.
+- A Trust & Safety staff console (manual verification review, report queue with SLA timers, suspensions, audit log).
+- Pre-signed media uploads with ownership checks.
+- Phone OTP login.
+
+See [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) §7.
 
 ### Run locally
 
@@ -35,13 +43,25 @@ SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
 # API docs: http://localhost:8080/swagger-ui.html
 ```
 
-The `dev` profile provides local-only secrets and the deterministic dev liveness verifier. It accepts the session tokens `dev-pass`, `dev-low-confidence` and `dev-looks-minor`. Any other deployment **must** set:
+The `dev` profile provides local-only secrets and local stand-ins:
+- **Liveness:** a deterministic dev verifier that accepts the session tokens `dev-pass`, `dev-low-confidence` and `dev-looks-minor`.
+- **SMS:** OTP codes are printed in the log.
+- **Media storage:** URLs are fake, under `media.dev.invalid`.
+
+Any other deployment **must** set:
 
 | Variable | Purpose |
 |---|---|
-| `ONEDAY_JWT_SECRET` | HS256 signing key (≥ 32 bytes) |
-| `ONEDAY_LOCATION_SECRET` | Key for stable per-pair distance jitter (≥ 32 bytes) |
+| `ONEDAY_JWT_SECRET` | HS256 signing key (≥ 32 bytes). Also keys the OTP hashes. |
+| `ONEDAY_LOCATION_SECRET` | Key for stable per-pair distance jitter and hashed probe-budget cells (≥ 32 bytes) |
 | `ONEDAY_VERIFICATION_PROVIDER` | Liveness vendor adapter id. Defaults to `none`, which never auto-approves. |
+| `ONEDAY_MEDIA_PROVIDER` | `s3` (AWS S3 or MinIO) or `none`. With `s3`, also set `ONEDAY_MEDIA_BUCKET`, `ONEDAY_MEDIA_REGION` (default `ap-south-1`, Mumbai), and optionally `ONEDAY_MEDIA_ENDPOINT` (MinIO) and `ONEDAY_MEDIA_ACCESS_KEY` / `ONEDAY_MEDIA_SECRET_KEY`. Without static keys the default AWS credential chain is used. |
+| `ONEDAY_SMS_PROVIDER` | SMS adapter for phone login (`none` disables it). India needs a TRAI DLT-registered sender. |
+| `ONEDAY_BOOTSTRAP_ADMIN_IDS` | Comma-separated **user ids** that act as the first Trust & Safety admins. Take the id from the `sub` of your own token. Ids, not emails: emails aren't ownership-verified yet. |
+
+**Multiple replicas:** add the `redis` profile (`SPRING_PROFILES_ACTIVE=prod,redis`, plus `ONEDAY_REDIS_HOST` / `ONEDAY_REDIS_PORT` / `ONEDAY_REDIS_PASSWORD`) so rate limits and location probe budgets are shared.
+
+**Media bucket:** keep it private, and add a lifecycle rule that expires `moments/` after about 3 days. Stories are ephemeral, and the rule backs up the best-effort deletes. Until the media-processing worker lands, clients must strip EXIF/GPS metadata before uploading.
 
 ### Test
 
@@ -50,7 +70,7 @@ The `dev` profile provides local-only secrets and the deterministic dev liveness
 ./mvnw test -Djava.version=21    # JDK 21
 ```
 
-Tests run the real security chain and the same Flyway migrations on H2 in MySQL mode. A controllable clock drives the 24 h story expiry and the 48 h Reaction Window.
+Tests run the real security chain and the same Flyway migrations on H2 in MySQL mode. A controllable clock drives the 24 h story expiry and the 48 h Reaction Window. If `redis-server` is on the `PATH`, the Redis implementations are also tested against a throwaway instance; otherwise those tests are skipped.
 
 ### Try the core loop (dev profile)
 
@@ -60,10 +80,21 @@ reg() { curl -s $B/auth/register -H 'Content-Type: application/json' -d "{\"emai
 ver() { curl -s $B/verification/liveness -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d '{"sessionToken":"dev-pass"}' | jq -r .token.token; }
 ASHA=$(ver $(reg asha)); RAVI=$(ver $(reg ravi))
 for T in $ASHA $RAVI; do curl -s -X PUT $B/location -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"lat":12.9352,"lon":77.6245}' >/dev/null; done
+# 1) get an upload ticket (the app would now PUT the photo to .uploadUrl), 2) publish the moment with its mediaRef
+REF=$(curl -s $B/media/uploads -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' -d '{"kind":"PHOTO","contentType":"image/jpeg","sizeBytes":250000}' | jq -r .mediaRef)
 M=$(curl -s $B/moments -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' \
-  -d '{"kind":"PHOTO","mediaRef":"media/x.jpg","activityTag":"trek","shareScope":"PUBLIC_DISCOVERY","capturedLive":true}' | jq -r .id)
+  -d "{\"kind\":\"PHOTO\",\"mediaRef\":\"$REF\",\"activityTag\":\"trek\",\"shareScope\":\"PUBLIC_DISCOVERY\",\"capturedLive\":true}" | jq -r .id)
 curl -s "$B/discover/constellation" -H "Authorization: Bearer $RAVI" | jq
 S=$(curl -s $B/signals -H "Authorization: Bearer $RAVI" -H 'Content-Type: application/json' -d "{\"momentId\":\"$M\",\"reaction\":\"MADE_ME_SMILE\",\"activityRef\":\"trek\"}" | jq -r .id)
 curl -s $B/signals/digest -H "Authorization: Bearer $ASHA" | jq
 curl -s -X POST $B/signals/$S/reveal -H "Authorization: Bearer $ASHA" | jq
 ```
+
+### Phone login (dev profile)
+
+```bash
+C=$(curl -s $B/auth/otp/request -H 'Content-Type: application/json' -d '{"phone":"98765 43210"}' | jq -r .challengeId)
+# the dev SMS sender prints the 6-digit code in the server log
+curl -s $B/auth/otp/verify -H 'Content-Type: application/json' -d "{\"challengeId\":\"$C\",\"phone\":\"9876543210\",\"code\":\"<code>\",\"displayName\":\"Priya\",\"dateOfBirth\":\"1997-02-14\",\"consentVersion\":\"2026-09\"}" | jq
+```
+

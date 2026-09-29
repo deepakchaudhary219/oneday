@@ -36,14 +36,14 @@
 The scope and status are listed in §6 below.
 - **Exit:** the full core loop passes end-to-end tests. The verification gate is enforced. The location-privacy unit tests pass.
 
-### M2 · Platform hardening (≈ 4–6 weeks)
-- Redis for rate limits, probe budgets and sessions. Horizontal replicas.
-- Media pipeline: pre-signed S3 upload, transcoding worker, Layer-0 low-fi preview rendition, CDN.
-- Liveness vendor adapter (replaces `DevLivenessVerifier`). Manual-review console for `MANUAL_REVIEW`.
-- Phone OTP login. Device attestation (Play Integrity / App Attest) on signup and location updates.
-- Push delivery for the **Local Pulse** at the user's chosen hour, with Discretion Mode copy.
-- Observability (OpenTelemetry), audit log, breach runbook, grievance flow, report-handling console with SLA timers.
-- CI: GitHub Actions running tests against MySQL (Testcontainers). Deploy to an Indian cloud region.
+### M2 · Platform hardening (≈ 4–6 weeks) 🟡 *in progress; delivered items are listed in §7*
+- ✅ Redis for rate limits and probe budgets, so horizontal replicas share limits.
+- ✅ Media: pre-signed S3/MinIO upload with ownership checks and short-lived view URLs. ⏳ Transcoding + metadata-stripping worker, Layer-0 low-fi preview rendition, CDN.
+- ✅ Manual-review console for `MANUAL_REVIEW`. ⏳ Liveness vendor adapter (replaces `DevLivenessVerifier`).
+- ✅ Phone OTP login (SMS port). ⏳ DLT-registered SMS adapter. ⏳ Device attestation (Play Integrity / App Attest) on signup and location updates.
+- ⏳ Push delivery for the **Local Pulse** at the user's chosen hour, with Discretion Mode copy.
+- ✅ Staff audit log and report-handling console with SLA timers. ⏳ Observability (OpenTelemetry), breach runbook, grievance flow.
+- ⏳ CI: GitHub Actions running tests against MySQL (Testcontainers). Deploy to an Indian cloud region.
 - **Exit:** load test at 5× the expected pilot peak. Staff can execute the takedown SLA.
 
 ### M3 · Mobile app v1 (≈ 8–12 weeks, starts once M1 APIs are frozen)
@@ -73,13 +73,15 @@ The scope and status are listed in §6 below.
 
 **Indicative total from start to public pilot: about 6–8 months** with the team above. Most of the risk is in M5 density, not in engineering.
 
-## 4. Engineering backlog after M1 (ordered)
+## 4. Engineering backlog (ordered)
 
-1. Redis-backed `RateLimiter` and `ProbeBudget` (interfaces already exist).
-2. Outbox table + domain events (`MomentPublished`, `SignalCreated`, `MutualReveal`, `UserBlocked`) to prepare for Kafka.
-3. Liveness vendor adapter + manual-review endpoints (`/admin/verification`).
-4. Media upload (pre-signed URLs), `media_ref` validation, Layer-0 preview rendition.
-5. Refresh tokens + revocation list. Phone OTP.
+Done in M2 so far: Redis state store, staff console with manual review, media uploads with ownership checks, phone OTP (see §7).
+
+1. **Media processing worker (highest priority before real users).** Re-encode uploads, **strip EXIF/GPS and other metadata**, write the Layer-0 low-fi preview, and only then serve the object. Until it exists, clients must strip metadata before upload, because view URLs currently serve the original file.
+2. **Deferred erasure under legal hold.** If an account with open P0 reports asks to be erased, hide it immediately but keep the evidence until the review closes (POCSO). The current behaviour erases at once. This must be done without tipping off the account holder.
+3. Liveness vendor adapter (replaces `DevLivenessVerifier`) and a DLT-registered SMS adapter.
+4. Outbox table + domain events (`MomentPublished`, `SignalCreated`, `MutualReveal`, `UserBlocked`) to prepare for Kafka, and to drive notifications (Local Pulse push, the report-outcome notice for `WARN`).
+5. Refresh tokens + revocation list. Device attestation.
 6. Pacing Guardian heuristics on the message stream (v2).
 7. Normalised `profile_languages` / `profile_home_region` indexes when Roots scope needs SQL-side filtering.
 8. Re-verification every 90 days (blueprint §21.4) as a scheduled job.
@@ -112,6 +114,18 @@ The scope and status are listed in §6 below.
 | DPDP export + erasure | `privacy` | ✅ |
 | Flyway schema, H2-backed integration tests, OpenAPI docs | `resources/db/migration`, `src/test` | ✅ |
 
-**Verification:** 34 automated tests pass (unit tests for geohash, location privacy and IDs, plus end-to-end API tests covering the full loop, the verification gate, under-18 refusal, the Signal Budget, 48 h expiry, anti-spoofing, Roots/Language scopes, Safe Zones, k-anonymous heat, bounded discovery, and export/erasure). The README's curl walkthrough was also run against a live server.
+**Verification (at the end of M1):** 34 automated tests pass (unit tests for geohash, location privacy and IDs, plus end-to-end API tests covering the full loop, the verification gate, under-18 refusal, the Signal Budget, 48 h expiry, anti-spoofing, Roots/Language scopes, Safe Zones, k-anonymous heat, bounded discovery, and export/erasure). The README's curl walkthrough was also run against a live server.
 
 **Run locally:** see the repository `README.md`.
+
+## 7. Milestone 2: delivered so far
+
+| Capability | Where | Status |
+|---|---|---|
+| Rate limits and location probe budgets shared across replicas: atomic Lua scripts, keyed-HMAC cells so Redis never holds a readable trail (`redis` profile) | `common`, `geo` | ✅ |
+| Trust & Safety console: staff roles in tokens with a database re-check, manual-review decisions (approve / retry / reject+suspend), report queue by priority with SLA due times and overdue flags, claim/resolve, suspend/reinstate, staff management, append-only audit log | `staff`, `identity`, `safety` | ✅ |
+| Media uploads: pre-signed S3/MinIO PUT with signed type and length, random keys with no user id, moments may attach only the poster's own recent unused upload, short-lived view URLs, object deletion on moment delete and erasure | `media`, `moments` | ✅ |
+| Phone OTP login: non-enumerating requests, keyed-HMAC storage, 5-minute expiry, attempt lockout, per-number and per-network limits, 18+ and consent checks for phone signup | `identity`, `sms` | ✅ |
+
+**Verification:** 59 automated tests pass. They include the Redis implementations run against a real `redis-server` (skipped automatically where Redis is not installed) and an offline check that the real S3 presigner signs content type and length. The new tests found and fixed three bugs: phone signups refused for being under 18 returned 500 instead of 422, phone login by a suspended account returned 500 instead of 403, and data export crashed for accounts without an email.
+

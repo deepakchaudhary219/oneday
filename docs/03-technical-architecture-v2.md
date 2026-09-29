@@ -50,7 +50,7 @@ Mobile app ──HTTPS──► Load balancer ──► OneDay (Spring Boot, N s
                                         probe budgets
 ```
 
-M1 keeps rate limits and probe budgets **in memory** behind small interfaces. M2 moves them to Redis so that multiple replicas share state.
+Rate limits and probe budgets sit behind two ports (`RateLimiter`, `ProbeBudget`). The default is in-memory, for a single node. The `redis` profile (`oneday.state.store=redis`) swaps in Redis implementations so that multiple replicas share one budget. Each check runs as one atomic Lua script. Probe-budget cells are stored as keyed HMACs with a 1 h TTL, so Redis never holds a readable location trail. Media goes straight from the client to S3-compatible storage through pre-signed URLs (§3).
 
 ### 1.3 Extraction triggers (when to add the v1-doc components)
 
@@ -78,7 +78,7 @@ M1 keeps rate limits and probe budgets **in memory** behind small interfaces. M2
 
 ---
 
-## 3. API surface (Milestone 1)
+## 3. API surface (Milestones 1–2)
 
 All endpoints except `/auth/*`, health and API docs require a bearer JWT. Endpoints marked **V** also require the `verified` scope: these are the *contact-reaching* actions from the progressive-verification model (v1 §4.3, blueprint §41.4).
 
@@ -86,13 +86,15 @@ All endpoints except `/auth/*`, health and API docs require a bearer JWT. Endpoi
 |---|---|---|
 | `POST /auth/register` | | Email, password, DOB, consent version. **Under 18 → 422, nothing stored.** Rate-limited per IP. |
 | `POST /auth/login` | | Returns JWT |
+| `POST /auth/otp/request` · `POST /auth/otp/verify` | | Phone login. The request step responds the same way whether or not the number is registered. Verify logs in, or signs up a new number (same 18+ and consent checks). Codes are keyed-HMAC, expire in 5 min and lock after 5 attempts. |
 | `POST /verification/liveness` | | Submits a liveness session token. Returns the verification result plus a **fresh token** with the `verified` scope. |
 | `GET/PATCH /profile/me` | | Own profile (activities, values, languages, home region, private gender / interested-in, privacy, Dating Lens, discretion, radius, pulse hour) |
 | `GET /location` · `PUT /location` | | Foreground ping: raw lat/lon in, **only the snapped cell stored** |
 | `POST /location/pause` | | Removes the stored cell. Your moments immediately leave discovery. |
 | `PUT /location/safe-zone` / `DELETE` | | Marks the *current* cell's area as a Safe Zone |
-| `POST /moments` | **V** | Publishes a live-captured moment (`FRIENDS_ONLY` / `PUBLIC_DISCOVERY`) |
-| `GET /moments/{id}` | | Layer-0 view for strangers. Full view for the owner and Connections. |
+| `POST /media/uploads` | **V** | Upload ticket: pre-signed PUT (type and length are signed) plus a random `mediaRef` with no user id |
+| `POST /moments` | **V** | Publishes a live-captured moment (`FRIENDS_ONLY` / `PUBLIC_DISCOVERY`). A photo or video must reference the poster's **own** upload from the last 24 h, used once. |
+| `GET /moments/{id}` | | Layer-0 view for strangers (optional preview URL only). Full view for the owner and Connections. Media comes back as **short-lived URLs**, never storage keys. |
 | `GET /discover/constellation?scope=RADIUS\|CITY\|ROOTS\|LANGUAGE&activity=&page=` | | Bounded batch of Ambient nodes. Returns `caughtUp=true` at the end. |
 | `GET /discover/heat` | | k-anonymous activity levels per ~5 km cell |
 | `POST /signals` | **V** | Sends a Signal to a moment (reaction + optional activity reference, **no free text**) |
@@ -107,7 +109,10 @@ All endpoints except `/auth/*`, health and API docs require a bearer JWT. Endpoi
 | `GET /conversations/{id}/balance` | | Qualitative Investment Balance for the viewer |
 | `POST /safety/blocks` · `POST /safety/reports` | | Target by `momentId`, `signalId` or `connectionId`. Internal user IDs are never exposed. |
 | `GET /pulse` | | Local Pulse digest (counts capped at "9+") |
-| `GET /privacy/export` · `DELETE /privacy/account` | | DPDP / GDPR access and erasure |
+| `GET /privacy/export` · `DELETE /privacy/account` | | DPDP / GDPR access and erasure (also deletes media objects after commit) |
+| `GET /staff/verification-queue` · `POST /staff/verification/{userId}/decision` | *moderator* | Manual review: `APPROVE`, `RETRY`, or `REJECT` (also suspends the account) |
+| `GET /staff/reports` · `POST /staff/reports/{id}/claim` · `POST /staff/reports/{id}/resolve` | *moderator* | Queue ordered by priority then age, with SLA `dueAt` and `overdue`. Resolve with `DISMISS`, `WARN` or `SUSPEND_USER`. |
+| `POST /staff/accounts/{userId}/reinstate` · `GET/PUT/DELETE /staff/members/…` · `GET /staff/audit` | *admin* | Reinstate accounts, manage staff roles (never your own), read the append-only audit log |
 
 **No internal user ID is ever returned for another person.** Strangers are addressed through the moment or signal they are acting on, which prevents enumeration and scraping.
 
@@ -115,10 +120,10 @@ All endpoints except `/auth/*`, health and API docs require a bearer JWT. Endpoi
 
 ## 4. Security model
 
-- **JWT (HS256)** with the claims `sub` = user ID and `scope` = `member` or `member verified`. TTL is configurable (default 60 min). Set the secret through `ONEDAY_JWT_SECRET` (at least 32 bytes). The app fails fast if the secret is missing or too short.
+- **JWT (HS256)** with the claims `sub` = user ID and `scope` = `member`, `member verified`, plus `moderator` / `admin` for staff. Staff scopes are issued only to active, verified accounts, and every staff request re-checks the role in the database. The first admin is bootstrapped by **user id** (`ONEDAY_BOOTSTRAP_ADMIN_IDS`), not by email, because emails are not ownership-verified yet. TTL is configurable (default 60 min). Set the secret through `ONEDAY_JWT_SECRET` (at least 32 bytes). The app fails fast if the secret is missing or too short.
 - **Gate:** `SecurityFilterChain` requires `SCOPE_verified` on every **V** route. Services *also* call `UserGuard.requireContactAllowed(userId)`, which re-reads account status and verification status. A token issued before a suspension or re-verification failure therefore cannot be used for contact actions.
 - **Signup abuse (blueprint §47.6):** per-IP rate limit on `/auth/register` in M1. M2 adds Play Integrity / App Attest device attestation.
-- **Passwords:** delegating encoder (bcrypt default). M2 adds phone OTP, because phone is the primary login method in India.
+- **Passwords:** delegating encoder (bcrypt default). **Phone OTP** (M2) is the primary login method in India. Phone-only accounts have no password and cannot use password login.
 - **Error contract:** RFC 9457 `ProblemDetail` with a stable `code` property.
 
 ---
@@ -158,7 +163,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1__core_schema.sql`)
+## 6. Data model (Flyway `V1`–`V4`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -171,7 +176,10 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `connections` | `id`, `user_a` < `user_b` UQ, `origin`, `state`, `spark_a`, `spark_b`, `ended_at` | Spark flags are private per side |
 | `conversations` / `messages` | `conversation.connection_id` UQ; `messages(conversation_id, created_at)` | 1:1 in M1. Plans can add group conversations later. |
 | `blocks` | PK(`blocker_id`, `blocked_id`) | Checked in both directions everywhere |
-| `reports` | `id`, `reporter_id`, `reported_id`, `category`, `priority`, `status`, `details` | Kept after erasure where the law requires it (reporter reference nulled) |
+| `reports` | `id`, `reporter_id`, `reported_id`, `category`, `priority`, `status`, `details`, `assignee_id`, `resolution`, `resolved_by`, `resolved_at` | Kept after erasure where the law requires it (reporter reference nulled) |
+| `staff_members` / `staff_actions` (V2) | role per user; append-only audit rows | Audit rows are kept after erasure of the subject |
+| `media_uploads` (V3) | `owner_id`, random `object_key`, `kind`, `content_type`, `size_bytes` | The only link between a media object and an account |
+| `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 
 ---
 
@@ -200,7 +208,8 @@ PENDING ──reveal──► REVEALED  (Connection + Conversation created atomi
 | DPDP: children | **Refuse under-18 at signup** (nothing persisted). Liveness age-estimate cross-check. `UNDERAGE_SUSPECTED` reports go to P0. | M1 ✅ |
 | DPDP: breach notice within 72 h | Runbook, audit log, on-call rota, contact template for the Data Protection Board | M2 |
 | DPDP: Consent Managers (registration opens 13 Nov 2026) | A consent API that accepts and honours consent artefacts | M3 |
-| IT Rules: grievance officer, takedown SLAs (some 2–3 h) | Report priority queue, on-call moderation, takedown audit trail | M2 |
+| IT Rules: grievance officer, takedown SLAs (some 2–3 h) | Staff console: priority queue with due times (P0 2 h) and overdue flags, suspension, append-only audit trail ✅. On-call rota and grievance UI still to come. | M2 (console ✅) |
+| Photo metadata (location in EXIF) | Media processing worker strips metadata before serving. Until then, clients must strip it before upload. | M2 (next) |
 | IT Rules 2026 SGI labelling | Live-capture-only Discovery Mode. Labelled lenses in Friend Mode. SGI declaration for any future upload path. | M1 (capture flag) / M2 (client attestation) |
 | POCSO mandatory reporting | Evidence-preservation hold on P0 reports, counsel-designed reporting SOP | Before public launch |
 | Data residency | Host in Indian cloud regions (e.g. Mumbai / Hyderabad) for Indian users | M2 infra |
