@@ -50,7 +50,7 @@ public class SecurityConfig {
 				.requestMatchers("/actuator/health/**", "/actuator/info", "/v3/api-docs/**", "/swagger-ui/**",
 						"/swagger-ui.html", "/error")
 				.permitAll()
-				.requestMatchers(HttpMethod.POST, "/moments", "/signals", "/signals/*/reveal",
+				.requestMatchers(HttpMethod.POST, "/moments", "/media/uploads", "/signals", "/signals/*/reveal",
 						"/conversations/*/messages", "/connections/*/spark")
 				.hasAuthority(VERIFIED)
 				.requestMatchers("/staff/members/**", "/staff/audit", "/staff/accounts/**").hasAuthority("SCOPE_admin")

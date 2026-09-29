@@ -11,6 +11,7 @@ import oneday.geo.LocationService;
 import oneday.identity.AuthService;
 import oneday.identity.User;
 import oneday.identity.UserGuard;
+import oneday.media.MediaService;
 import oneday.moments.MomentService;
 import oneday.profile.ProfileService;
 import oneday.safety.SafetyService;
@@ -50,9 +51,11 @@ public class PrivacyService {
 
 	private final StaffDirectory staff;
 
+	private final MediaService media;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
-			SafetyService safety, VerificationService verification, StaffDirectory staff) {
+			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media) {
 		this.guard = guard;
 		this.accounts = accounts;
 		this.profiles = profiles;
@@ -64,6 +67,7 @@ public class PrivacyService {
 		this.safety = safety;
 		this.verification = verification;
 		this.staff = staff;
+		this.media = media;
 	}
 
 	/** Everything we hold about the user. Other people's identities are not included. */
@@ -126,6 +130,7 @@ public class PrivacyService {
 		connections.deleteAll(all);
 		signals.deleteInvolving(userId);
 		moments.deleteAllBy(userId);
+		media.deleteAllFor(userId);
 		locations.forget(userId);
 		safety.forget(userId);
 		verification.forget(userId);

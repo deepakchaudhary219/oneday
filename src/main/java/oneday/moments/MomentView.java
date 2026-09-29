@@ -5,6 +5,7 @@ import java.time.Instant;
 /**
  * One shape for both reveal layers. {@code AMBIENT} (Layer 0) carries only first name, activity and an
  * optional low-fi preview; caption and media are {@code null} until a Mutual Reveal (blueprint v2 §4).
+ * Media is returned as short-lived URLs, never as storage keys.
  */
 public record MomentView(
 		String id,
@@ -13,9 +14,9 @@ public record MomentView(
 		MomentKind kind,
 		String activityTag,
 		boolean capturedLive,
-		String previewRef,
+		String previewUrl,
 		String caption,
-		String mediaRef,
+		String mediaUrl,
 		ShareScope shareScope,
 		Instant postedAt) {
 
@@ -23,13 +24,13 @@ public record MomentView(
 		AMBIENT, FULL
 	}
 
-	static MomentView full(Moment m, String firstName) {
+	static MomentView full(Moment m, String firstName, String previewUrl, String mediaUrl) {
 		return new MomentView(m.getId(), Layer.FULL, firstName, m.getKind(), m.getActivityTag(), m.isCapturedLive(),
-				m.previewRef(), m.getCaption(), m.getMediaRef(), m.getShareScope(), m.getCreatedAt());
+				previewUrl, m.getCaption(), mediaUrl, m.getShareScope(), m.getCreatedAt());
 	}
 
-	static MomentView ambient(Moment m, String firstName) {
+	static MomentView ambient(Moment m, String firstName, String previewUrl) {
 		return new MomentView(m.getId(), Layer.AMBIENT, firstName, m.getKind(), m.getActivityTag(),
-				m.isCapturedLive(), m.previewRef(), null, null, null, null);
+				m.isCapturedLive(), previewUrl, null, null, null, null);
 	}
 }

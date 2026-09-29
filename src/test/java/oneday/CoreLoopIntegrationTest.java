@@ -50,12 +50,12 @@ class CoreLoopIntegrationTest extends ApiTestSupport {
 			.andExpect(jsonPath("$.nodes[0].sharedHomeRegion").value("IN-KL"))
 			.andExpect(jsonPath("$.nodes[0].whyYouSeeThis", containsString("kindness and adventure")))
 			.andExpect(jsonPath("$.caughtUp").value(true)));
-		assertThat(constellation).doesNotContain(userIdOf(asha), "12.93", "77.62", "Sunrise", "media/");
+		assertThat(constellation).doesNotContain(userIdOf(asha), "12.93", "77.62", "Sunrise", "moments/");
 
 		getAs(ravi, "/moments/" + momentId).andExpect(status().isOk())
 			.andExpect(jsonPath("$.layer").value("AMBIENT"))
 			.andExpect(jsonPath("$.caption").value(nullValue()))
-			.andExpect(jsonPath("$.mediaRef").value(nullValue()));
+			.andExpect(jsonPath("$.mediaUrl").value(nullValue()));
 
 		// Layer 1: a signal with an activity reference, never free text. One per moment.
 		String signalId = sendSignal(ravi, momentId, "trek");
@@ -85,7 +85,8 @@ class CoreLoopIntegrationTest extends ApiTestSupport {
 		String conversationId = JsonPath.read(reveal, "$.conversationId");
 
 		getAs(ravi, "/moments/" + momentId).andExpect(jsonPath("$.layer").value("FULL"))
-			.andExpect(jsonPath("$.caption").value("Sunrise at Nandi Hills"));
+			.andExpect(jsonPath("$.caption").value("Sunrise at Nandi Hills"))
+			.andExpect(jsonPath("$.mediaUrl", org.hamcrest.Matchers.startsWith("https://media.dev.invalid/moments/")));
 		getAs(ravi, "/discover/constellation").andExpect(jsonPath("$.nodes", hasSize(0)));
 		getAs(ravi, "/signals/sent").andExpect(jsonPath("$[0].becameConnection").value(true));
 

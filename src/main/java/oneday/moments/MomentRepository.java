@@ -23,6 +23,8 @@ public interface MomentRepository extends JpaRepository<Moment, String> {
 
 	List<Moment> findByOwnerIdOrderByCreatedAtDesc(String ownerId);
 
+	boolean existsByMediaRef(String mediaRef);
+
 	@Modifying
 	@Query("delete from Moment m where m.ownerId = :ownerId")
 	void deleteByOwner(@Param("ownerId") String ownerId);

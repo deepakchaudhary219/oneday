@@ -12,6 +12,8 @@ import oneday.geo.GeoCell;
 import oneday.geo.GeoMath;
 import oneday.geo.LocationService;
 import oneday.identity.UserGuard;
+import oneday.media.MediaKind;
+import oneday.media.MediaService;
 import oneday.profile.ActivityTags;
 import oneday.profile.ProfileService;
 import oneday.safety.BlockChecker;
@@ -37,12 +39,14 @@ public class MomentService {
 
 	private final BlockChecker blocks;
 
+	private final MediaService media;
+
 	private final Clock clock;
 
 	private final OneDayProperties.Moments settings;
 
 	public MomentService(MomentRepository moments, LocationService locations, ProfileService profiles,
-			ConnectionService connections, UserGuard guard, BlockChecker blocks, Clock clock,
+			ConnectionService connections, UserGuard guard, BlockChecker blocks, MediaService media, Clock clock,
 			OneDayProperties properties) {
 		this.moments = moments;
 		this.locations = locations;
@@ -50,6 +54,7 @@ public class MomentService {
 		this.connections = connections;
 		this.guard = guard;
 		this.blocks = blocks;
+		this.media = media;
 		this.clock = clock;
 		this.settings = properties.moments();
 	}
@@ -65,8 +70,15 @@ public class MomentService {
 		if (isText && (request.caption() == null || request.caption().isBlank())) {
 			throw ApiException.badRequest("CAPTION_REQUIRED", "A text moment needs some text");
 		}
-		if (!isText && (request.mediaRef() == null || request.mediaRef().isBlank())) {
-			throw ApiException.badRequest("MEDIA_REQUIRED", "Photo and video moments need uploaded media");
+		if (!isText) {
+			if (request.mediaRef() == null || request.mediaRef().isBlank()) {
+				throw ApiException.badRequest("MEDIA_REQUIRED", "Photo and video moments need uploaded media");
+			}
+			// Only the poster's own recent upload, used once: nobody can attach someone else's photo.
+			media.requireAttachable(userId, request.mediaRef().trim(), MediaKind.valueOf(request.kind().name()));
+			if (moments.existsByMediaRef(request.mediaRef().trim())) {
+				throw ApiException.conflict("MEDIA_ALREADY_USED", "That upload is already attached to a moment");
+			}
 		}
 		GeoCell cell = null;
 		if (request.shareScope() == ShareScope.PUBLIC_DISCOVERY) {
@@ -81,7 +93,7 @@ public class MomentService {
 				ActivityTags.normalize(request.activityTag()), blankToNull(request.mediaRef()),
 				request.isPreviewAllowed(), request.shareScope(), isText || request.isCapturedLive(), cell, now,
 				now.plus(settings.ttl())));
-		return MomentView.full(moment, profiles.require(userId).firstName());
+		return full(moment, profiles.require(userId).firstName());
 	}
 
 	/**
@@ -97,16 +109,16 @@ public class MomentService {
 		String ownerId = moment.getOwnerId();
 		String firstName = profiles.require(ownerId).firstName();
 		if (ownerId.equals(viewerId)) {
-			return MomentView.full(moment, firstName);
+			return full(moment, firstName);
 		}
 		if (blocks.isBlockedEitherWay(viewerId, ownerId)) {
 			throw ApiException.notFound("Moment");
 		}
 		if (connections.areConnected(viewerId, ownerId)) {
-			return MomentView.full(moment, firstName);
+			return full(moment, firstName);
 		}
 		if (moment.isPublic() && locations.currentCell(ownerId).isPresent()) {
-			return MomentView.ambient(moment, firstName);
+			return MomentView.ambient(moment, firstName, previewUrl(moment));
 		}
 		throw ApiException.notFound("Moment");
 	}
@@ -116,7 +128,7 @@ public class MomentService {
 		String firstName = profiles.require(userId).firstName();
 		return moments.findByOwnerIdAndExpiresAtAfterOrderByCreatedAtDesc(userId, clock.instant())
 			.stream()
-			.map(m -> MomentView.full(m, firstName))
+			.map(m -> full(m, firstName))
 			.toList();
 	}
 
@@ -126,6 +138,7 @@ public class MomentService {
 			.filter(m -> m.getOwnerId().equals(userId))
 			.orElseThrow(() -> ApiException.notFound("Moment"));
 		moments.delete(moment);
+		media.discard(moment.getMediaRef());
 	}
 
 	/** A public moment that is still live, for signalling. */
@@ -157,6 +170,15 @@ public class MomentService {
 	@Transactional
 	public void deleteAllBy(String userId) {
 		moments.deleteByOwner(userId);
+	}
+
+	/** Short-lived URL of the Layer-0 preview, if this moment has one. */
+	public String previewUrl(Moment moment) {
+		return moment.hasPreview() ? media.previewUrl(moment.getMediaRef()) : null;
+	}
+
+	private MomentView full(Moment moment, String firstName) {
+		return MomentView.full(moment, firstName, previewUrl(moment), media.viewUrl(moment.getMediaRef()));
 	}
 
 	private static String blankToNull(String value) {

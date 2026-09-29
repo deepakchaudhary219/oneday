@@ -143,7 +143,7 @@ public class DiscoveryService {
 		List<ConstellationNode> nodes = candidates.stream()
 			.skip(from)
 			.limit(settings.batchSize())
-			.map(DiscoveryService::toNode)
+			.map(this::toNode)
 			.toList();
 		boolean caughtUp = from + settings.batchSize() >= candidates.size() || page + 1 >= settings.maxPagesPerSession();
 		return new Constellation(scope, page, nodes, caughtUp, caughtUp ? caughtUpMessage() : null);
@@ -193,12 +193,12 @@ public class DiscoveryService {
 		return activity == null || activity.equals(moment.getActivityTag()) || owner.getActivities().contains(activity);
 	}
 
-	private static ConstellationNode toNode(Candidate c) {
+	private ConstellationNode toNode(Candidate c) {
 		Moment m = c.moment();
 		String activity = m.getActivityTag() != null ? m.getActivityTag()
 				: c.owner().getActivities().stream().findFirst().orElse(null);
 		return new ConstellationNode(m.getId(), c.owner().firstName(), m.getKind(), activity, c.placement().band(),
-				c.placement().band().label(), c.placement().direction(), m.isCapturedLive(), m.previewRef(),
+				c.placement().band().label(), c.placement().direction(), m.isCapturedLive(), moments.previewUrl(m),
 				c.affinity().sharedHomeRegion(), c.affinity().sharedLanguages(),
 				c.affinity().explanation(m.getActivityTag()));
 	}

@@ -46,7 +46,7 @@ public abstract class ApiTestSupport {
 	protected static final double BLR_LON = 77.6245;
 
 	private static final List<String> TABLES = List.of("staff_actions", "staff_members", "messages", "conversations", "connections", "signals",
-			"moments", "user_locations", "blocks", "reports", "verification_attempts", "profiles", "users");
+			"moments", "media_uploads", "user_locations", "blocks", "reports", "verification_attempts", "profiles", "users");
 
 	@Autowired
 	protected MockMvc mvc;
@@ -107,11 +107,22 @@ public abstract class ApiTestSupport {
 		perform(put("/location"), token, "{\"lat\":" + lat + ",\"lon\":" + lon + "}").andExpect(status().isOk());
 	}
 
+	/** Requests an upload ticket and returns its {@code mediaRef}. */
+	protected String upload(String token, String kind, String contentType) throws Exception {
+		String response = perform(post("/media/uploads"), token,
+				"{\"kind\":\"" + kind + "\",\"contentType\":\"" + contentType + "\",\"sizeBytes\":250000}")
+			.andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		return JsonPath.read(response, "$.mediaRef");
+	}
+
 	protected String postPublicMoment(String token, String activity) throws Exception {
 		String body = """
-				{"kind":"PHOTO","caption":"Sunrise at Nandi Hills","activityTag":"%s","mediaRef":"media/test.jpg",
+				{"kind":"PHOTO","caption":"Sunrise at Nandi Hills","activityTag":"%s","mediaRef":"%s",
 				 "shareScope":"PUBLIC_DISCOVERY","capturedLive":true,"previewAllowed":false}
-				""".formatted(activity);
+				""".formatted(activity, upload(token, "PHOTO", "image/jpeg"));
 		String response = perform(post("/moments"), token, body).andExpect(status().isCreated())
 			.andReturn()
 			.getResponse()
