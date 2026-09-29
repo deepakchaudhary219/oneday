@@ -6,6 +6,7 @@ import java.time.LocalDate;
 import java.time.Period;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Optional;
 
 import oneday.common.ApiException;
 import oneday.common.RateLimiter;
@@ -60,6 +61,10 @@ public class VerificationService {
 		if (user.isVerified()) {
 			return new VerificationResponse(user.getVerificationStatus(), "You're already verified", tokens.issue(user));
 		}
+		if (user.getVerificationStatus() == VerificationStatus.REJECTED) {
+			throw ApiException.forbidden("VERIFICATION_REJECTED",
+					"This account can't be verified. Contact the grievance officer if you think this is a mistake.");
+		}
 		if (user.getVerificationStatus() == VerificationStatus.MANUAL_REVIEW) {
 			return new VerificationResponse(user.getVerificationStatus(),
 					"A person on our safety team is reviewing your check. You can keep browsing meanwhile.",
@@ -91,6 +96,11 @@ public class VerificationService {
 			}
 		}
 		return new VerificationResponse(user.getVerificationStatus(), message, tokens.issue(user));
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<VerificationAttempt> latestAttempt(String userId) {
+		return attempts.findByUserIdOrderByCreatedAtDesc(userId).stream().findFirst();
 	}
 
 	@Transactional(readOnly = true)

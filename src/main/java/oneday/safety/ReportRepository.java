@@ -1,5 +1,6 @@
 package oneday.safety;
 
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -11,7 +12,9 @@ public interface ReportRepository extends JpaRepository<Report, String> {
 
 	List<Report> findByReporterIdOrderByCreatedAtDesc(String reporterId);
 
-	List<Report> findByPriorityAndStatusOrderByCreatedAtAsc(ReportCategory.Priority priority, Report.Status status);
+	List<Report> findByStatusIn(Collection<Report.Status> statuses);
+
+	long countByReportedId(String reportedId);
 
 	@Modifying
 	@Query("update Report r set r.reporterId = null where r.reporterId = :userId")

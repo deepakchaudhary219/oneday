@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -40,6 +41,11 @@ public class ProfileService {
 	public Profile create(String userId, String displayName) {
 		int defaultRadius = Math.min(5, properties.discovery().maxRadiusKm());
 		return profiles.save(new Profile(userId, displayName.trim(), defaultRadius, clock.instant()));
+	}
+
+	@Transactional(readOnly = true)
+	public Optional<Profile> find(String userId) {
+		return profiles.findById(userId);
 	}
 
 	public Profile require(String userId) {

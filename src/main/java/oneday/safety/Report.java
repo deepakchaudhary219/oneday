@@ -16,7 +16,16 @@ import jakarta.persistence.Table;
 public class Report {
 
 	public enum Status {
-		OPEN, IN_REVIEW, ACTIONED, DISMISSED
+		OPEN, IN_REVIEW, ACTIONED, DISMISSED;
+
+		public boolean isOpen() {
+			return this == OPEN || this == IN_REVIEW;
+		}
+	}
+
+	/** What Trust & Safety did about a report. */
+	public enum Resolution {
+		DISMISSED, WARNED, SUSPENDED
 	}
 
 	@Id
@@ -48,6 +57,17 @@ public class Report {
 	@Column(nullable = false)
 	private Instant createdAt;
 
+	private String assigneeId;
+
+	@Enumerated(EnumType.STRING)
+	private Resolution resolution;
+
+	private String resolutionNote;
+
+	private String resolvedBy;
+
+	private Instant resolvedAt;
+
 	protected Report() {
 	}
 
@@ -64,8 +84,41 @@ public class Report {
 		this.createdAt = now;
 	}
 
+	void claim(String staffUserId) {
+		this.status = Status.IN_REVIEW;
+		this.assigneeId = staffUserId;
+	}
+
+	void resolve(Resolution resolution, String note, String staffUserId, Instant now) {
+		this.status = resolution == Resolution.DISMISSED ? Status.DISMISSED : Status.ACTIONED;
+		this.resolution = resolution;
+		this.resolutionNote = note;
+		this.resolvedBy = staffUserId;
+		this.resolvedAt = now;
+	}
+
 	public String getId() {
 		return id;
+	}
+
+	public String getTargetType() {
+		return targetType;
+	}
+
+	public String getDetails() {
+		return details;
+	}
+
+	public String getAssigneeId() {
+		return assigneeId;
+	}
+
+	public Resolution getResolution() {
+		return resolution;
+	}
+
+	public Instant getResolvedAt() {
+		return resolvedAt;
 	}
 
 	public String getReporterId() {

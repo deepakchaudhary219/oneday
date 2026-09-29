@@ -1,6 +1,7 @@
 package oneday.safety;
 
 import java.time.Clock;
+import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
 
@@ -83,6 +84,44 @@ public class SafetyService {
 	@Transactional(readOnly = true)
 	public List<Block> blocksMadeBy(String userId) {
 		return blocks.findByBlockerId(userId);
+	}
+
+	// ---- Trust & Safety queue (staff only; callers enforce the staff role) ----------------------------
+
+	/** Open work, most urgent first: priority, then oldest. */
+	@Transactional(readOnly = true)
+	public List<Report> openQueue() {
+		return reports.findByStatusIn(List.of(Report.Status.OPEN, Report.Status.IN_REVIEW))
+			.stream()
+			.sorted(Comparator.comparing(Report::getPriority).thenComparing(Report::getCreatedAt))
+			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public long reportsAgainst(String userId) {
+		return reports.countByReportedId(userId);
+	}
+
+	@Transactional
+	public Report claim(String reportId, String staffUserId) {
+		Report report = requireOpen(reportId);
+		report.claim(staffUserId);
+		return report;
+	}
+
+	@Transactional
+	public Report resolve(String reportId, Report.Resolution resolution, String note, String staffUserId) {
+		Report report = requireOpen(reportId);
+		report.resolve(resolution, note, staffUserId, clock.instant());
+		return report;
+	}
+
+	private Report requireOpen(String reportId) {
+		Report report = reports.findById(reportId).orElseThrow(() -> ApiException.notFound("Report"));
+		if (!report.getStatus().isOpen()) {
+			throw ApiException.conflict("REPORT_CLOSED", "This report has already been resolved");
+		}
+		return report;
 	}
 
 	/** Erasure: remove blocks involving the user; keep reports but detach the reporter's identity. */

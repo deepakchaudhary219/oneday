@@ -62,6 +62,14 @@ public class VerificationAttempt {
 		return outcome;
 	}
 
+	public int getEstimatedAge() {
+		return estimatedAge;
+	}
+
+	public double getConfidence() {
+		return confidence;
+	}
+
 	public Instant getCreatedAt() {
 		return createdAt;
 	}

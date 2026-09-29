@@ -72,6 +72,23 @@ public class User {
 		this.verificationStatus = VerificationStatus.MANUAL_REVIEW;
 	}
 
+	public void markRejected() {
+		this.verificationStatus = VerificationStatus.REJECTED;
+	}
+
+	/** Lets the user take the liveness check again (e.g. a moderator asked for a clearer attempt). */
+	public void resetVerification() {
+		this.verificationStatus = VerificationStatus.UNVERIFIED;
+	}
+
+	public void suspend() {
+		this.accountStatus = AccountStatus.SUSPENDED;
+	}
+
+	public void reinstate() {
+		this.accountStatus = AccountStatus.ACTIVE;
+	}
+
 	public boolean isVerified() {
 		return verificationStatus == VerificationStatus.VERIFIED;
 	}

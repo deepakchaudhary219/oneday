@@ -45,7 +45,7 @@ public abstract class ApiTestSupport {
 
 	protected static final double BLR_LON = 77.6245;
 
-	private static final List<String> TABLES = List.of("messages", "conversations", "connections", "signals",
+	private static final List<String> TABLES = List.of("staff_actions", "staff_members", "messages", "conversations", "connections", "signals",
 			"moments", "user_locations", "blocks", "reports", "verification_attempts", "profiles", "users");
 
 	@Autowired
@@ -55,7 +55,7 @@ public abstract class ApiTestSupport {
 	protected MutableClock clock;
 
 	@Autowired
-	private JdbcTemplate jdbc;
+	protected JdbcTemplate jdbc;
 
 	@BeforeEach
 	void cleanDatabase() {

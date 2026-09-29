@@ -53,6 +53,8 @@ public class SecurityConfig {
 				.requestMatchers(HttpMethod.POST, "/moments", "/signals", "/signals/*/reveal",
 						"/conversations/*/messages", "/connections/*/spark")
 				.hasAuthority(VERIFIED)
+				.requestMatchers("/staff/members/**", "/staff/audit", "/staff/accounts/**").hasAuthority("SCOPE_admin")
+				.requestMatchers("/staff/**").hasAuthority("SCOPE_moderator")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));
 		return http.build();

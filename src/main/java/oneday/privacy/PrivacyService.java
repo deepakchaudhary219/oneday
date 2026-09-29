@@ -15,6 +15,7 @@ import oneday.moments.MomentService;
 import oneday.profile.ProfileService;
 import oneday.safety.SafetyService;
 import oneday.signals.SignalService;
+import oneday.staff.StaffDirectory;
 import oneday.verification.VerificationService;
 
 import org.springframework.stereotype.Service;
@@ -47,9 +48,11 @@ public class PrivacyService {
 
 	private final VerificationService verification;
 
+	private final StaffDirectory staff;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
-			SafetyService safety, VerificationService verification) {
+			SafetyService safety, VerificationService verification, StaffDirectory staff) {
 		this.guard = guard;
 		this.accounts = accounts;
 		this.profiles = profiles;
@@ -60,6 +63,7 @@ public class PrivacyService {
 		this.chat = chat;
 		this.safety = safety;
 		this.verification = verification;
+		this.staff = staff;
 	}
 
 	/** Everything we hold about the user. Other people's identities are not included. */
@@ -125,6 +129,7 @@ public class PrivacyService {
 		locations.forget(userId);
 		safety.forget(userId);
 		verification.forget(userId);
+		staff.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
 	}
