@@ -18,11 +18,8 @@ import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
-import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
@@ -31,13 +28,14 @@ import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
 /**
- * Full-stack API tests: real security filter chain, real services, Flyway schema on H2. Each test starts
+ * Full-stack API tests: real security filter chain, real services, Flyway schema on H2
+ * (or MySQL, when {@code SPRING_DATASOURCE_URL} points at one). Each test starts
  * from empty tables; the shared clock only ever moves forward.
  */
 @SpringBootTest
 @AutoConfigureMockMvc
 @ActiveProfiles("test")
-@Import(ApiTestSupport.TestClockConfig.class)
+@Import(TestClockConfig.class)
 public abstract class ApiTestSupport {
 
 	/** Koramangala, Bengaluru. */
@@ -204,15 +202,5 @@ public abstract class ApiTestSupport {
 			request.contentType(MediaType.APPLICATION_JSON).content(json);
 		}
 		return mvc.perform(request);
-	}
-
-	@TestConfiguration
-	static class TestClockConfig {
-
-		@Bean
-		@Primary
-		MutableClock testClock() {
-			return new MutableClock(Instant.now());
-		}
 	}
 }

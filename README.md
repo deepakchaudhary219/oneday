@@ -32,12 +32,13 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
 - Phone OTP login.
 - Deferred erasure under a safety hold.
 - Local Pulse push notifications.
+- A container image, a production-shaped `docker compose` stack and CI on H2, MySQL 8.4 and the full stack.
 
 See [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) §7.
 
 ### Run locally
 
-Requirements: JDK 25 (the code also compiles and tests on JDK 21) and MySQL 8.
+Requirements: JDK 25 (the code also compiles and tests on JDK 21) and MySQL 8.4.
 
 ```bash
 # MySQL on localhost:3306 (root/root by default; override with ONEDAY_DB_URL / ONEDAY_DB_USER / ONEDAY_DB_PASSWORD)
@@ -58,15 +59,26 @@ Any other deployment **must** set:
 | `ONEDAY_JWT_SECRET` | HS256 signing key (≥ 32 bytes). Also keys the OTP hashes. |
 | `ONEDAY_LOCATION_SECRET` | Key for stable per-pair distance jitter and hashed probe-budget cells (≥ 32 bytes) |
 | `ONEDAY_VERIFICATION_PROVIDER` | Liveness vendor adapter id. Defaults to `none`, which never auto-approves. |
-| `ONEDAY_MEDIA_PROVIDER` | `s3` (AWS S3 or MinIO) or `none`. With `s3`, also set `ONEDAY_MEDIA_BUCKET`, `ONEDAY_MEDIA_REGION` (default `ap-south-1`, Mumbai), and optionally `ONEDAY_MEDIA_ENDPOINT` (MinIO) and `ONEDAY_MEDIA_ACCESS_KEY` / `ONEDAY_MEDIA_SECRET_KEY`. Without static keys the default AWS credential chain is used. |
+| `ONEDAY_MEDIA_PROVIDER` | `s3` (AWS S3 or any S3-compatible store) or `none`. With `s3`, also set `ONEDAY_MEDIA_BUCKET`, `ONEDAY_MEDIA_REGION` (default `ap-south-1`, Mumbai), and optionally `ONEDAY_MEDIA_ENDPOINT` (a non-AWS store), `ONEDAY_MEDIA_PUBLIC_ENDPOINT` (the host phones use in signed URLs, when it differs from how the API reaches the store) and `ONEDAY_MEDIA_ACCESS_KEY` / `ONEDAY_MEDIA_SECRET_KEY`. Without static keys the default AWS credential chain is used. |
 | `ONEDAY_PUSH_PROVIDER` | Push adapter for the Local Pulse and safety notices (`none` disables push; in-app notices still work) |
 | `ONEDAY_FFMPEG` / `ONEDAY_FFPROBE` | Paths to ffmpeg/ffprobe for video processing. Without them, video uploads are refused rather than served unprocessed. |
 | `ONEDAY_SMS_PROVIDER` | SMS adapter for phone login (`none` disables it). India needs a TRAI DLT-registered sender. |
+| `ONEDAY_API_DOCS` | `true` publishes `/v3/api-docs` and Swagger UI. Off by default outside the `dev` profile. |
 | `ONEDAY_BOOTSTRAP_ADMIN_IDS` | Comma-separated **user ids** that act as the first Trust & Safety admins. Take the id from the `sub` of your own token. Ids, not emails: emails aren't ownership-verified yet. |
 
 **Multiple replicas:** add the `redis` profile (`SPRING_PROFILES_ACTIVE=prod,redis`, plus `ONEDAY_REDIS_HOST` / `ONEDAY_REDIS_PORT` / `ONEDAY_REDIS_PASSWORD`) so rate limits and location probe budgets are shared.
 
 **Media bucket:** keep it private. Add lifecycle rules that expire `moments/` after about 3 days (stories are ephemeral, and the rule backs up the best-effort deletes) and `incoming/` after 1 day.
+
+### Run the whole stack in Docker
+
+```bash
+cp .env.example .env          # fill in every value, e.g. with `openssl rand -base64 48`
+docker compose up --build     # API :8080, MySQL 8.4, Redis, SeaweedFS (S3 API on :8333)
+scripts/smoke-test.sh         # sign-up -> signed upload -> metadata stripped -> reveal -> erasure
+```
+
+The image (`Dockerfile`) is a JRE 25 runtime with ffmpeg, running as a non-root user. The compose stack uses the `redis` profile, real S3 signatures against SeaweedFS (MinIO no longer publishes community images), and the `dev` SMS, liveness and push providers so the loop works offline. The smoke test is the same one CI runs.
 
 ### Test
 
@@ -76,6 +88,17 @@ Any other deployment **must** set:
 ```
 
 Tests run the real security chain and the same Flyway migrations on H2 in MySQL mode. A controllable clock drives the 24 h story expiry and the 48 h Reaction Window. If `redis-server` and `ffmpeg` are on the `PATH`, the Redis implementations and video processing are tested against the real tools; otherwise those tests are skipped.
+
+To run the same suite on real MySQL, point it at an empty database:
+
+```bash
+docker run -d --name oneday-mysql -p 3306:3306 -e MYSQL_DATABASE=oneday_test -e MYSQL_USER=oneday \
+  -e MYSQL_PASSWORD=oneday -e MYSQL_RANDOM_ROOT_PASSWORD=yes mysql:8.4
+SPRING_DATASOURCE_URL=jdbc:mysql://127.0.0.1:3306/oneday_test SPRING_DATASOURCE_USERNAME=oneday \
+  SPRING_DATASOURCE_PASSWORD=oneday ./mvnw test
+```
+
+CI (`.github/workflows/ci.yml`) runs the suite on H2 and on MySQL 8.4 with ffmpeg and redis-server installed, and fails if any test is skipped. It then builds the image, starts the compose stack and runs `scripts/smoke-test.sh`.
 
 ### Try the core loop (dev profile)
 

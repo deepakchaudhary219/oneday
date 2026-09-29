@@ -73,8 +73,13 @@ public class S3MediaStorage implements MediaStorage, DisposableBean {
 			.serviceConfiguration(pathStyle)
 			.httpClient(UrlConnectionHttpClient.create());
 		if (hasText(properties.endpoint())) {
-			presignerBuilder.endpointOverride(URI.create(properties.endpoint()));
 			clientBuilder.endpointOverride(URI.create(properties.endpoint()));
+		}
+		// Signed URLs are used by phones, which may reach the store under a different host than we do.
+		String signingEndpoint = hasText(properties.publicEndpoint()) ? properties.publicEndpoint()
+				: properties.endpoint();
+		if (hasText(signingEndpoint)) {
+			presignerBuilder.endpointOverride(URI.create(signingEndpoint));
 		}
 		this.presigner = presignerBuilder.build();
 		this.client = clientBuilder.build();
