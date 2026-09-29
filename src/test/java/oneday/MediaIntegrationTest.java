@@ -1,7 +1,8 @@
 package oneday;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.hamcrest.Matchers.endsWith;
+import static org.hamcrest.Matchers.containsString;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,6 +14,7 @@ import com.jayway.jsonpath.JsonPath;
 
 import oneday.media.DevMediaStorage;
 import oneday.support.ApiTestSupport;
+import oneday.support.TestMedia;
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -35,7 +37,7 @@ class MediaIntegrationTest extends ApiTestSupport {
 			.andExpect(status().isCreated())
 			.andExpect(jsonPath("$.method").value("PUT"))
 			.andExpect(jsonPath("$.headers.content-type").value("image/jpeg"))
-			.andExpect(jsonPath("$.uploadUrl", startsWith("https://media.dev.invalid/moments/"))));
+			.andExpect(jsonPath("$.uploadUrl", startsWith(DEV_MEDIA + "incoming/"))));
 		String mediaRef = JsonPath.read(ticket, "$.mediaRef");
 		assertThat(mediaRef).matches("moments/\\d{4}/\\d{2}/[0-9a-f-]{36}\\.jpg").doesNotContain(userIdOf(token));
 
@@ -47,8 +49,10 @@ class MediaIntegrationTest extends ApiTestSupport {
 		postAs(token, "/media/uploads", "{\"kind\":\"PHOTO\",\"contentType\":\"image/png\",\"sizeBytes\":20971520}")
 			.andExpect(status().isUnprocessableContent())
 			.andExpect(jsonPath("$.code").value("MEDIA_TOO_LARGE"));
-		postAs(token, "/media/uploads", "{\"kind\":\"VIDEO\",\"contentType\":\"video/mp4\",\"sizeBytes\":52428800}")
-			.andExpect(status().isCreated());
+		if (TestMedia.ffmpegInstalled()) {
+			postAs(token, "/media/uploads", "{\"kind\":\"VIDEO\",\"contentType\":\"video/mp4\",\"sizeBytes\":52428800}")
+				.andExpect(status().isCreated());
+		}
 	}
 
 	@Test
@@ -76,6 +80,7 @@ class MediaIntegrationTest extends ApiTestSupport {
 
 	@Test
 	void strangersSeeOnlyTheOptionalPreviewNeverTheMedia() throws Exception {
+		assumeTrue(TestMedia.ffmpegInstalled(), "video processing needs ffmpeg");
 		String asha = verifiedUser("Asha");
 		String ravi = verifiedUser("Ravi");
 		locate(asha, BLR_LAT, BLR_LON);
@@ -88,11 +93,11 @@ class MediaIntegrationTest extends ApiTestSupport {
 
 		getAs(ravi, "/moments/" + momentId).andExpect(jsonPath("$.layer").value("AMBIENT"))
 			.andExpect(jsonPath("$.mediaUrl").value(nullValue()))
-			.andExpect(jsonPath("$.previewUrl", endsWith(".preview.mp4?dev-signature=view")));
+			.andExpect(jsonPath("$.previewUrl", containsString(".preview.mp4?expires=")));
 		getAs(ravi, "/discover/constellation")
-			.andExpect(jsonPath("$.nodes[0].previewUrl", endsWith(".preview.mp4?dev-signature=view")));
+			.andExpect(jsonPath("$.nodes[0].previewUrl", containsString(".preview.mp4?expires=")));
 		getAs(asha, "/moments/" + momentId)
-			.andExpect(jsonPath("$.mediaUrl").value("https://media.dev.invalid/" + video + "?dev-signature=view"));
+			.andExpect(jsonPath("$.mediaUrl", startsWith(DEV_MEDIA + video + "?expires=")));
 	}
 
 	@Test

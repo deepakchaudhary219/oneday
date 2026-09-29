@@ -7,6 +7,7 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
 import oneday.config.OneDayProperties;
+import oneday.media.MediaProperties;
 
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -42,10 +43,14 @@ public class SecurityConfig {
 	static final String VERIFIED = "SCOPE_verified";
 
 	@Bean
-	SecurityFilterChain apiSecurity(HttpSecurity http) throws Exception {
+	SecurityFilterChain apiSecurity(HttpSecurity http, MediaProperties media) throws Exception {
+		// The dev object store authorises by URL signature, exactly like pre-signed S3; it only exists in dev.
+		String[] devMedia = "dev".equals(media.provider()) ? new String[] { "/dev-media/**" } : new String[0];
 		http.csrf(csrf -> csrf.disable())
 			.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(auth -> auth
+				.requestMatchers(devMedia)
+				.permitAll()
 				.requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login", "/auth/otp/request",
 						"/auth/otp/verify")
 				.permitAll()

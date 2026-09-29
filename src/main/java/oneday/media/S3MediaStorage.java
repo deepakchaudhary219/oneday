@@ -1,6 +1,8 @@
 package oneday.media;
 
+import java.io.IOException;
 import java.net.URI;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -17,6 +19,9 @@ import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.AwsCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.DefaultCredentialsProvider;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.exception.SdkException;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.core.sync.ResponseTransformer;
 import software.amazon.awssdk.http.urlconnection.UrlConnectionHttpClient;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
@@ -24,6 +29,7 @@ import software.amazon.awssdk.services.s3.S3Configuration;
 import software.amazon.awssdk.services.s3.model.Delete;
 import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.presigner.S3Presigner;
@@ -100,6 +106,30 @@ public class S3MediaStorage implements MediaStorage, DisposableBean {
 			.presignGetObject(GetObjectPresignRequest.builder().signatureDuration(ttl).getObjectRequest(get).build())
 			.url()
 			.toString();
+	}
+
+	@Override
+	public void download(String key, Path target) throws IOException {
+		try {
+			client.getObject(GetObjectRequest.builder().bucket(bucket).key(key).build(), ResponseTransformer.toFile(target));
+		}
+		catch (NoSuchKeyException ex) {
+			throw new MissingObjectException(key);
+		}
+		catch (SdkException ex) {
+			throw new IOException("Download failed for " + key, ex);
+		}
+	}
+
+	@Override
+	public void upload(String key, Path source, String contentType) throws IOException {
+		try {
+			client.putObject(PutObjectRequest.builder().bucket(bucket).key(key).contentType(contentType).build(),
+					RequestBody.fromFile(source));
+		}
+		catch (SdkException ex) {
+			throw new IOException("Upload failed for " + key, ex);
+		}
 	}
 
 	@Override

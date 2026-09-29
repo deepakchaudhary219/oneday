@@ -107,15 +107,46 @@ public abstract class ApiTestSupport {
 		perform(put("/location"), token, "{\"lat\":" + lat + ",\"lon\":" + lon + "}").andExpect(status().isOk());
 	}
 
-	/** Requests an upload ticket and returns its {@code mediaRef}. */
+	/** Where the dev object store's signed URLs point (see {@code oneday.media.dev-base-url}). */
+	protected static final String DEV_MEDIA = "http://localhost:8080/dev-media/";
+
+	/**
+	 * The real client flow with a genuine file: ticket → signed PUT → complete. Processing runs inline in
+	 * tests, so the returned {@code mediaRef} is READY (or REJECTED for bad files).
+	 */
 	protected String upload(String token, String kind, String contentType) throws Exception {
-		String response = perform(post("/media/uploads"), token,
-				"{\"kind\":\"" + kind + "\",\"contentType\":\"" + contentType + "\",\"sizeBytes\":250000}")
-			.andExpect(status().isCreated())
+		byte[] bytes = switch (kind) {
+			case "VIDEO" -> TestMedia.mp4WithMetadata(2);
+			default -> "image/png".equals(contentType) ? TestMedia.png(64, 48) : TestMedia.jpeg(64, 48);
+		};
+		return uploadBytes(token, kind, contentType, bytes, true);
+	}
+
+	protected String uploadBytes(String token, String kind, String contentType, byte[] bytes, boolean complete)
+			throws Exception {
+		String ticket = body(perform(post("/media/uploads"), token, "{\"kind\":\"" + kind + "\",\"contentType\":\""
+				+ contentType + "\",\"sizeBytes\":" + bytes.length + "}")
+			.andExpect(status().isCreated()));
+		putToDevStorage(JsonPath.read(ticket, "$.uploadUrl"), contentType, bytes).andExpect(status().isOk());
+		String mediaRef = JsonPath.read(ticket, "$.mediaRef");
+		if (complete) {
+			perform(post("/media/uploads/complete"), token, "{\"mediaRef\":\"" + mediaRef + "\"}")
+				.andExpect(status().isOk());
+		}
+		return mediaRef;
+	}
+
+	protected ResultActions putToDevStorage(String signedUrl, String contentType, byte[] bytes) throws Exception {
+		return mvc.perform(put(signedUrl.substring("http://localhost:8080".length())).contentType(contentType)
+			.content(bytes));
+	}
+
+	protected byte[] fetchFromDevStorage(String signedUrl) throws Exception {
+		return mvc.perform(get(signedUrl.substring("http://localhost:8080".length())))
+			.andExpect(status().isOk())
 			.andReturn()
 			.getResponse()
-			.getContentAsString();
-		return JsonPath.read(response, "$.mediaRef");
+			.getContentAsByteArray();
 	}
 
 	protected String postPublicMoment(String token, String activity) throws Exception {

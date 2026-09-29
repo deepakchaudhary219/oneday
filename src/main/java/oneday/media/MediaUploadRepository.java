@@ -1,5 +1,6 @@
 package oneday.media;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -12,4 +13,6 @@ public interface MediaUploadRepository extends JpaRepository<MediaUpload, String
 	Optional<MediaUpload> findByObjectKey(String objectKey);
 
 	List<MediaUpload> findByOwnerId(String ownerId);
+
+	List<MediaUpload> findByStatusAndUpdatedAtBefore(MediaUpload.Status status, Instant cutoff);
 }

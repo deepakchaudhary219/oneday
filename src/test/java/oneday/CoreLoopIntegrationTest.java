@@ -86,7 +86,7 @@ class CoreLoopIntegrationTest extends ApiTestSupport {
 
 		getAs(ravi, "/moments/" + momentId).andExpect(jsonPath("$.layer").value("FULL"))
 			.andExpect(jsonPath("$.caption").value("Sunrise at Nandi Hills"))
-			.andExpect(jsonPath("$.mediaUrl", org.hamcrest.Matchers.startsWith("https://media.dev.invalid/moments/")));
+			.andExpect(jsonPath("$.mediaUrl", org.hamcrest.Matchers.startsWith(DEV_MEDIA + "moments/")));
 		getAs(ravi, "/discover/constellation").andExpect(jsonPath("$.nodes", hasSize(0)));
 		getAs(ravi, "/signals/sent").andExpect(jsonPath("$[0].becameConnection").value(true));
 

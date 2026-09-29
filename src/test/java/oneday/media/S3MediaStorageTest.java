@@ -15,7 +15,7 @@ class S3MediaStorageTest {
 
 	private final S3MediaStorage storage = new S3MediaStorage(new MediaProperties("s3", "oneday-media", "ap-south-1",
 			"http://localhost:9000", "test-access-key", "test-secret-key", Duration.ofMinutes(10), Duration.ofHours(1),
-			15_728_640, 104_857_600, 30));
+			15_728_640, 104_857_600, 30, "", 40_000_000, 60, false, "ffmpeg", "ffprobe"));
 
 	@AfterEach
 	void close() {
