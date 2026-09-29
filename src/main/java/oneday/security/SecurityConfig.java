@@ -32,7 +32,8 @@ import org.springframework.security.web.SecurityFilterChain;
  * Stateless JWT security. Contact-reaching routes (posting publicly, signalling, revealing, messaging,
  * sparking) require the {@code verified} scope: the progressive-verification gate from blueprint §41.4,
  * enforced in the filter chain so no controller can forget it. Services re-check against the database
- * (see {@code UserGuard}) so a stale token cannot outlive a revoked verification.
+ * (see {@code UserGuard}) so a stale token cannot outlive a revoked verification, and every token must
+ * belong to a live sign-in session (see {@link SessionValidator}).
  */
 @Configuration
 @EnableWebSecurity
@@ -51,8 +52,8 @@ public class SecurityConfig {
 			.authorizeHttpRequests(auth -> auth
 				.requestMatchers(devMedia)
 				.permitAll()
-				.requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login", "/auth/otp/request",
-						"/auth/otp/verify")
+				.requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login", "/auth/refresh",
+						"/auth/otp/request", "/auth/otp/verify")
 				.permitAll()
 				.requestMatchers("/actuator/health/**", "/actuator/info", "/v3/api-docs/**", "/swagger-ui/**",
 						"/swagger-ui.html", "/error")
@@ -79,13 +80,15 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	JwtDecoder jwtDecoder(SecretKey jwtSigningKey, Clock clock) {
+	JwtDecoder jwtDecoder(SecretKey jwtSigningKey, Clock clock, SessionRepository sessions) {
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSigningKey)
 			.macAlgorithm(MacAlgorithm.HS256)
 			.build();
 		JwtTimestampValidator timestamps = new JwtTimestampValidator();
 		timestamps.setClock(clock);
-		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestamps, new JwtIssuerValidator(ISSUER)));
+		// Cheap checks first: the session lookup only runs for a well-formed, unexpired token of ours.
+		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestamps, new JwtIssuerValidator(ISSUER),
+				new SessionValidator(sessions, clock)));
 		return decoder;
 	}
 

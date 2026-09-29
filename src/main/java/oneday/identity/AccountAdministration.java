@@ -4,6 +4,8 @@ import java.time.Clock;
 import java.util.List;
 
 import oneday.common.ApiException;
+import oneday.security.Session.EndReason;
+import oneday.security.SessionService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -23,10 +25,13 @@ public class AccountAdministration {
 
 	private final UserRepository users;
 
+	private final SessionService sessions;
+
 	private final Clock clock;
 
-	public AccountAdministration(UserRepository users, Clock clock) {
+	public AccountAdministration(UserRepository users, SessionService sessions, Clock clock) {
 		this.users = users;
+		this.sessions = sessions;
 		this.clock = clock;
 	}
 
@@ -41,6 +46,7 @@ public class AccountAdministration {
 	@Transactional
 	public void deactivateForErasure(String userId) {
 		require(userId).deactivateForErasure(clock.instant());
+		sessions.endAll(userId, EndReason.ERASURE);
 	}
 
 	@Transactional(readOnly = true)
@@ -65,16 +71,22 @@ public class AccountAdministration {
 			case REJECT -> {
 				user.markRejected();
 				user.suspend();
+				sessions.endAll(userId, EndReason.SUSPENDED);
 			}
 		}
 		return user;
 	}
 
-	/** Suspension takes effect immediately: every service re-checks account status on each request. */
+	/**
+	 * Suspension takes effect immediately: every service re-checks account status on each request, and every
+	 * session ends, so a device someone else controls is cut off too. The holder can sign in again to a
+	 * restricted account (export, notices, appeal).
+	 */
 	@Transactional
 	public User suspend(String userId) {
 		User user = require(userId);
 		user.suspend();
+		sessions.endAll(userId, EndReason.SUSPENDED);
 		return user;
 	}
 

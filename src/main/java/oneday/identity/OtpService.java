@@ -96,7 +96,7 @@ public class OtpService {
 	 */
 	@Transactional(noRollbackFor = ApiException.class)
 	public PhoneAuthResult verify(String challengeId, String rawPhone, String code, SignupDetails signup,
-			String clientIp) {
+			ClientInfo client) {
 		String phone = normalize(rawPhone);
 		Instant now = clock.instant();
 		OtpChallenge challenge = challenges.findById(challengeId)
@@ -111,7 +111,7 @@ public class OtpService {
 			challenge.recordFailedAttempt();
 			throw invalidCode();
 		}
-		Optional<IssuedToken> existing = auth.loginPhone(phone);
+		Optional<IssuedToken> existing = auth.loginPhone(phone, client);
 		if (existing.isPresent()) {
 			challenge.consume(now);
 			return new PhoneAuthResult(false, existing.get());
@@ -121,7 +121,7 @@ public class OtpService {
 					"New here! Add your name, date of birth and accept the privacy notice to finish signing up.");
 		}
 		IssuedToken token = auth.registerPhone(phone, signup.dateOfBirth(), signup.displayName().trim(),
-				signup.consentVersion(), clientIp);
+				signup.consentVersion(), client);
 		challenge.consume(now);
 		return new PhoneAuthResult(true, token);
 	}

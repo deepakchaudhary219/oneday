@@ -13,10 +13,11 @@ import oneday.identity.AuthService;
 import oneday.identity.User;
 import oneday.identity.UserGuard;
 import oneday.media.MediaService;
-import oneday.notify.NotificationService;
 import oneday.moments.MomentService;
+import oneday.notify.NotificationService;
 import oneday.profile.ProfileService;
 import oneday.safety.SafetyService;
+import oneday.security.SessionService;
 import oneday.signals.SignalService;
 import oneday.staff.StaffDirectory;
 import oneday.verification.VerificationService;
@@ -60,10 +61,12 @@ public class PrivacyService {
 
 	private final NotificationService notifications;
 
+	private final SessionService sessions;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
-			AccountAdministration administration, NotificationService notifications) {
+			AccountAdministration administration, NotificationService notifications, SessionService sessions) {
 		this.guard = guard;
 		this.accounts = accounts;
 		this.profiles = profiles;
@@ -78,6 +81,7 @@ public class PrivacyService {
 		this.media = media;
 		this.administration = administration;
 		this.notifications = notifications;
+		this.sessions = sessions;
 	}
 
 	/** Everything we hold about the user. Other people's identities are not included. */
@@ -122,6 +126,11 @@ public class PrivacyService {
 			.map(r -> row("category", r.getCategory(), "status", r.getStatus(), "at", r.getCreatedAt()))
 			.toList());
 		data.put("devices", notifications.devicesOf(userId));
+		data.put("signIns", sessions.history(userId)
+			.stream()
+			.map(s -> row("device", s.getDevice(), "since", s.getCreatedAt(), "lastUsed", s.getLastUsedAt(),
+					"ended", s.getEndedAt(), "endReason", s.getEndReason()))
+			.toList());
 		data.put("notices", notifications.notices(userId));
 		data.put("verificationAttempts", verification.attemptsBy(userId)
 			.stream()
@@ -176,6 +185,7 @@ public class PrivacyService {
 		verification.forget(userId);
 		staff.forget(userId);
 		notifications.forget(userId);
+		sessions.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
 	}

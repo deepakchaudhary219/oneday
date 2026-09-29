@@ -50,8 +50,9 @@ class LegalHoldIntegrationTest extends ApiTestSupport {
 		MvcResult held = getAs(ravi, "/profile/me").andReturn();
 		MvcResult erased = getAs(control, "/profile/me").andReturn();
 		assertThat(held.getResponse().getStatus()).isEqualTo(erased.getResponse().getStatus()).isEqualTo(401);
-		assertThat((String) JsonPath.read(held.getResponse().getContentAsString(), "$.code"))
-			.isEqualTo(JsonPath.read(erased.getResponse().getContentAsString(), "$.code"));
+		assertThat(held.getResponse().getContentAsString()).isEqualTo(erased.getResponse().getContentAsString());
+		assertThat(held.getResponse().getHeader("WWW-Authenticate"))
+			.isEqualTo(erased.getResponse().getHeader("WWW-Authenticate"));
 		login(raviEmail).andExpect(status().isUnauthorized())
 			.andExpect(jsonPath("$.code").value("INVALID_CREDENTIALS"));
 		// ...their email is released (they could even sign up again)...
@@ -97,11 +98,12 @@ class LegalHoldIntegrationTest extends ApiTestSupport {
 		postAs(admin, "/staff/reports/" + reportId + "/resolve", "{\"action\":\"SUSPEND_USER\"}")
 			.andExpect(status().isOk());
 
-		// Suspended accounts keep their data rights: they can export and ask for erasure.
+		// Suspension signs every device out; the holder can sign in again, export and ask for erasure.
+		getAs(ravi, "/privacy/export").andExpect(status().isUnauthorized());
+		ravi = signIn(ravi);
 		getAs(ravi, "/privacy/export").andExpect(status().isOk());
 		deleteAs(ravi, "/privacy/account?confirm=DELETE").andExpect(status().isNoContent());
-		getAs(ravi, "/profile/me").andExpect(status().isUnauthorized())
-			.andExpect(jsonPath("$.code").value("ACCOUNT_NOT_FOUND"));
+		getAs(ravi, "/profile/me").andExpect(status().isUnauthorized());
 
 		getAs(admin, "/staff/erasures")
 			.andExpect(jsonPath("$[0].holdReason", startsWith("Enforcement evidence retained until")));
@@ -132,11 +134,6 @@ class LegalHoldIntegrationTest extends ApiTestSupport {
 	private String postPublicMomentAfterLocating(String token) throws Exception {
 		locate(token, BLR_LAT, BLR_LON);
 		return postPublicMoment(token, "coffee");
-	}
-
-	private org.springframework.test.web.servlet.ResultActions login(String email) throws Exception {
-		return mvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
-			.content("{\"email\":\"" + email + "\",\"password\":\"correct-horse-battery\"}"));
 	}
 
 	private long count(String sql, Object... args) {

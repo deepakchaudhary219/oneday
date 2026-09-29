@@ -10,7 +10,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import com.jayway.jsonpath.JsonPath;
@@ -43,8 +45,13 @@ public abstract class ApiTestSupport {
 
 	protected static final double BLR_LON = 77.6245;
 
-	private static final List<String> TABLES = List.of("notices", "pulse_deliveries", "devices", "staff_actions", "staff_members", "messages", "conversations", "connections", "signals",
+	private static final List<String> TABLES = List.of("sessions", "notices", "pulse_deliveries", "devices", "staff_actions", "staff_members", "messages", "conversations", "connections", "signals",
 			"moments", "media_uploads", "user_locations", "blocks", "reports", "verification_attempts", "otp_challenges", "profiles", "users");
+
+	protected static final String PASSWORD = "correct-horse-battery";
+
+	/** Emails of the accounts registered by this test, by user id, so they can sign in again. */
+	private final Map<String, String> emails = new HashMap<>();
 
 	@Autowired
 	protected MockMvc mvc;
@@ -63,17 +70,33 @@ public abstract class ApiTestSupport {
 	// ---- accounts -------------------------------------------------------------------------------------
 
 	protected String register(String displayName) throws Exception {
+		String email = displayName.toLowerCase().replace(' ', '.') + "+" + UUID.randomUUID() + "@example.com";
 		String body = """
-				{"email":"%s","password":"correct-horse-battery","dateOfBirth":"1998-04-12",
+				{"email":"%s","password":"%s","dateOfBirth":"1998-04-12",
 				 "displayName":"%s","consentVersion":"2026-09"}
-				""".formatted(displayName.toLowerCase().replace(' ', '.') + "+" + UUID.randomUUID() + "@example.com",
-				displayName);
+				""".formatted(email, PASSWORD, displayName);
 		String response = mvc.perform(post("/auth/register").contentType(MediaType.APPLICATION_JSON).content(body))
 			.andExpect(status().isCreated())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
-		return JsonPath.read(response, "$.token");
+		String token = JsonPath.read(response, "$.token");
+		emails.put(userIdOf(token), email);
+		return token;
+	}
+
+	/** Signs the user in again on another device (a new session) and returns its access token. */
+	protected String signIn(String token) throws Exception {
+		return JsonPath.read(body(login(emailOf(token)).andExpect(status().isOk())), "$.token");
+	}
+
+	protected ResultActions login(String email) throws Exception {
+		return mvc.perform(post("/auth/login").contentType(MediaType.APPLICATION_JSON)
+			.content("{\"email\":\"" + email + "\",\"password\":\"" + PASSWORD + "\"}"));
+	}
+
+	protected String emailOf(String token) {
+		return emails.get(userIdOf(token));
 	}
 
 	/** Runs the dev liveness check and returns the fresh token (with the verified scope on success). */

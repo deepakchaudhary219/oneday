@@ -14,6 +14,7 @@ import oneday.config.OneDayProperties;
 import oneday.identity.User;
 import oneday.identity.UserGuard;
 import oneday.identity.VerificationStatus;
+import oneday.security.SessionService;
 import oneday.security.TokenService;
 import oneday.verification.LivenessVerifier.LivenessResult;
 import oneday.verification.VerificationAttempt.Outcome;
@@ -36,7 +37,7 @@ public class VerificationService {
 
 	private final UserGuard guard;
 
-	private final TokenService tokens;
+	private final SessionService sessions;
 
 	private final RateLimiter rateLimiter;
 
@@ -45,21 +46,23 @@ public class VerificationService {
 	private final OneDayProperties.Verification settings;
 
 	public VerificationService(ObjectProvider<LivenessVerifier> verifier, VerificationAttemptRepository attempts,
-			UserGuard guard, TokenService tokens, RateLimiter rateLimiter, Clock clock, OneDayProperties properties) {
+			UserGuard guard, SessionService sessions, RateLimiter rateLimiter, Clock clock,
+			OneDayProperties properties) {
 		this.verifier = verifier;
 		this.attempts = attempts;
 		this.guard = guard;
-		this.tokens = tokens;
+		this.sessions = sessions;
 		this.rateLimiter = rateLimiter;
 		this.clock = clock;
 		this.settings = properties.verification();
 	}
 
 	@Transactional
-	public VerificationResponse submitLiveness(String userId, String sessionToken) {
+	public VerificationResponse submitLiveness(String userId, String signInSessionId, String sessionToken) {
 		User user = guard.requireActive(userId);
 		if (user.isVerified()) {
-			return new VerificationResponse(user.getVerificationStatus(), "You're already verified", tokens.issue(user));
+			return new VerificationResponse(user.getVerificationStatus(), "You're already verified",
+					sessions.reissue(user, signInSessionId));
 		}
 		if (user.getVerificationStatus() == VerificationStatus.REJECTED) {
 			throw ApiException.forbidden("VERIFICATION_REJECTED",
@@ -68,7 +71,7 @@ public class VerificationService {
 		if (user.getVerificationStatus() == VerificationStatus.MANUAL_REVIEW) {
 			return new VerificationResponse(user.getVerificationStatus(),
 					"A person on our safety team is reviewing your check. You can keep browsing meanwhile.",
-					tokens.issue(user));
+					sessions.reissue(user, signInSessionId));
 		}
 		LivenessVerifier provider = verifier.getIfAvailable();
 		if (provider == null) {
@@ -95,7 +98,8 @@ public class VerificationService {
 				message = "Thanks! A person on our safety team will review this shortly. You can keep browsing.";
 			}
 		}
-		return new VerificationResponse(user.getVerificationStatus(), message, tokens.issue(user));
+		return new VerificationResponse(user.getVerificationStatus(), message,
+				sessions.reissue(user, signInSessionId));
 	}
 
 	@Transactional(readOnly = true)

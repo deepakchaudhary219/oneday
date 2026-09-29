@@ -72,10 +72,14 @@ class StaffConsoleIntegrationTest extends ApiTestSupport {
 		String approvedToken = verify(approved, "dev-pass");
 		getAs(approvedToken, "/profile/me").andExpect(jsonPath("$.verificationStatus").value("VERIFIED"));
 
-		// REJECT: likely minor is rejected and suspended; they cannot retry or use the app.
+		// REJECT: likely minor is rejected and suspended; they are signed out and cannot retry or use the app.
 		decide(moderator, minor, "REJECT").andExpect(jsonPath("$.accountStatus").value("SUSPENDED"));
-		getAs(minor, "/profile/me").andExpect(status().isForbidden())
+		getAs(minor, "/profile/me").andExpect(status().isUnauthorized());
+		String restricted = signIn(minor);
+		getAs(restricted, "/profile/me").andExpect(status().isForbidden())
 			.andExpect(jsonPath("$.code").value("ACCOUNT_SUSPENDED"));
+		postAs(restricted, "/verification/liveness", "{\"sessionToken\":\"dev-pass\"}")
+			.andExpect(status().isForbidden());
 
 		getAs(moderator, "/staff/verification-queue").andExpect(jsonPath("$", hasSize(0)));
 		decide(moderator, approved, "APPROVE").andExpect(status().isConflict())
@@ -118,8 +122,9 @@ class StaffConsoleIntegrationTest extends ApiTestSupport {
 			.andExpect(jsonPath("$.status").value("ACTIONED"))
 			.andExpect(jsonPath("$.resolution").value("SUSPENDED"));
 
-		// Suspension is immediate: Ravi is locked out and gone from discovery.
-		getAs(ravi, "/profile/me").andExpect(status().isForbidden());
+		// Suspension is immediate: Ravi is signed out everywhere, restricted if he signs in, gone from discovery.
+		getAs(ravi, "/profile/me").andExpect(status().isUnauthorized());
+		getAs(signIn(ravi), "/profile/me").andExpect(status().isForbidden());
 		locate(asha, BLR_LAT, BLR_LON);
 		getAs(asha, "/discover/constellation").andExpect(jsonPath("$.nodes", hasSize(0)));
 
@@ -152,13 +157,16 @@ class StaffConsoleIntegrationTest extends ApiTestSupport {
 				"$.reportId");
 		postAs(admin, "/staff/reports/" + reportId + "/resolve", "{\"action\":\"SUSPEND_USER\"}")
 			.andExpect(status().isOk());
-		getAs(helperAsModerator, "/staff/reports").andExpect(status().isForbidden());
+		getAs(helperAsModerator, "/staff/reports").andExpect(status().isUnauthorized());
+		getAs(signIn(helper), "/staff/reports").andExpect(status().isForbidden());
 		postAs(admin, "/staff/accounts/" + helperId + "/reinstate", "{\"note\":\"appeal upheld\"}")
 			.andExpect(status().isNoContent());
-		getAs(helperAsModerator, "/staff/reports").andExpect(status().isOk());
+		String reinstated = signIn(helper);
+		getAs(reinstated, "/staff/reports").andExpect(status().isOk());
 
+		// A revoked role is enforced at once, even for a token that still carries the moderator scope.
 		deleteAs(admin, "/staff/members/" + helperId).andExpect(status().isNoContent());
-		getAs(helperAsModerator, "/staff/reports").andExpect(status().isForbidden());
+		getAs(reinstated, "/staff/reports").andExpect(status().isForbidden());
 
 		String audit = body(getAs(admin, "/staff/audit").andExpect(status().isOk()));
 		List<String> actions = JsonPath.read(audit, "$[*].action");

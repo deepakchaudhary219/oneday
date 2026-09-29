@@ -11,7 +11,7 @@ import oneday.common.ApiException;
 import oneday.common.RateLimiter;
 import oneday.config.OneDayProperties;
 import oneday.profile.ProfileService;
-import oneday.security.TokenService;
+import oneday.security.SessionService;
 import oneday.security.TokenService.IssuedToken;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,7 +29,7 @@ public class AuthService {
 
 	private final PasswordEncoder passwordEncoder;
 
-	private final TokenService tokens;
+	private final SessionService sessions;
 
 	private final RateLimiter rateLimiter;
 
@@ -38,11 +38,11 @@ public class AuthService {
 	private final OneDayProperties properties;
 
 	public AuthService(UserRepository users, ProfileService profiles, PasswordEncoder passwordEncoder,
-			TokenService tokens, RateLimiter rateLimiter, Clock clock, OneDayProperties properties) {
+			SessionService sessions, RateLimiter rateLimiter, Clock clock, OneDayProperties properties) {
 		this.users = users;
 		this.profiles = profiles;
 		this.passwordEncoder = passwordEncoder;
-		this.tokens = tokens;
+		this.sessions = sessions;
 		this.rateLimiter = rateLimiter;
 		this.clock = clock;
 		this.properties = properties;
@@ -53,8 +53,8 @@ public class AuthService {
 	 * anything is persisted: the platform does not process children's data (DPDP Rules, blueprint §24.1).
 	 */
 	@Transactional
-	public IssuedToken register(RegisterRequest request, String clientIp) {
-		checkSignupAllowed(clientIp, request.dateOfBirth(), request.consentVersion());
+	public IssuedToken register(RegisterRequest request, ClientInfo client) {
+		checkSignupAllowed(client.ip(), request.dateOfBirth(), request.consentVersion());
 		String email = request.email().trim().toLowerCase(Locale.ROOT);
 		if (users.existsByEmail(email)) {
 			throw ApiException.conflict("EMAIL_TAKEN", "An account with this email already exists");
@@ -62,7 +62,7 @@ public class AuthService {
 		User user = users.save(User.withEmail(email, passwordEncoder.encode(request.password()), request.dateOfBirth(),
 				request.consentVersion(), clock.instant()));
 		profiles.create(user.getId(), request.displayName());
-		return tokens.issue(user);
+		return sessions.start(user, client.device());
 	}
 
 	/**
@@ -72,24 +72,20 @@ public class AuthService {
 	 */
 	@Transactional(noRollbackFor = ApiException.class)
 	public IssuedToken registerPhone(String phone, LocalDate dateOfBirth, String displayName, String consentVersion,
-			String clientIp) {
-		checkSignupAllowed(clientIp, dateOfBirth, consentVersion);
+			ClientInfo client) {
+		checkSignupAllowed(client.ip(), dateOfBirth, consentVersion);
 		if (users.existsByPhone(phone)) {
 			throw ApiException.conflict("PHONE_TAKEN", "An account with this phone number already exists");
 		}
 		User user = users.save(User.withPhone(phone, dateOfBirth, consentVersion, clock.instant()));
 		profiles.create(user.getId(), displayName);
-		return tokens.issue(user);
+		return sessions.start(user, client.device());
 	}
 
-	@Transactional(readOnly = true, noRollbackFor = ApiException.class)
-	public java.util.Optional<IssuedToken> loginPhone(String phone) {
-		return users.findByPhone(phone).map(user -> {
-			if (!user.isActive()) {
-				throw ApiException.forbidden("ACCOUNT_SUSPENDED", "This account is suspended");
-			}
-			return tokens.issue(user);
-		});
+	/** A suspended account may sign in: it keeps its data rights and can appeal (see {@link #login}). */
+	@Transactional(noRollbackFor = ApiException.class)
+	public java.util.Optional<IssuedToken> loginPhone(String phone, ClientInfo client) {
+		return users.findByPhone(phone).map(user -> sessions.start(user, client.device()));
 	}
 
 	private void checkSignupAllowed(String clientIp, LocalDate dateOfBirth, String consentVersion) {
@@ -114,14 +110,30 @@ public class AuthService {
 		users.deleteById(userId);
 	}
 
-	@Transactional(readOnly = true)
-	public IssuedToken login(LoginRequest request) {
-		User user = users.findByEmail(request.email().trim().toLowerCase(Locale.ROOT))
-			.filter(u -> u.getPasswordHash() != null && passwordEncoder.matches(request.password(), u.getPasswordHash()))
-			.orElseThrow(() -> ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect"));
-		if (!user.isActive()) {
-			throw ApiException.forbidden("ACCOUNT_SUSPENDED", "This account is suspended");
+	/**
+	 * Password guessing is limited per network and per account. A suspended account may still sign in: its
+	 * token carries no contact scopes and every feature re-checks the account, but the holder can export their
+	 * data, read why they were suspended and appeal. Accounts awaiting erasure have no email left to match.
+	 */
+	@Transactional
+	public IssuedToken login(LoginRequest request, ClientInfo client) {
+		OneDayProperties.Security limits = properties.security();
+		if (!rateLimiter.tryAcquire("login-ip:" + client.ip(), limits.loginsPerIpPerHour(), Duration.ofHours(1))) {
+			throw tooManyLogins();
 		}
-		return tokens.issue(user);
+		User user = users.findByEmail(request.email().trim().toLowerCase(Locale.ROOT)).orElse(null);
+		if (user != null && !rateLimiter.tryAcquire("login-account:" + user.getId(), limits.loginsPerAccountPerHour(),
+				Duration.ofHours(1))) {
+			throw tooManyLogins();
+		}
+		if (user == null || user.getPasswordHash() == null
+				|| !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+			throw ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect");
+		}
+		return sessions.start(user, client.device());
+	}
+
+	private static ApiException tooManyLogins() {
+		return ApiException.tooManyRequests("LOGIN_RATE_LIMITED", "Too many sign-in attempts. Try again later.");
 	}
 }

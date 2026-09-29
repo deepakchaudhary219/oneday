@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # End-to-end smoke test against a running stack (e.g. `docker compose up`) using the dev liveness provider:
 # sign up, verify, upload a photo straight to object storage with a signed URL, wait for the worker, publish,
-# signal, reveal, then erase the account and check the stored object is gone. Needs curl, jq and base64.
+# signal, reveal, refresh and sign out, then erase the account and check the stored object is gone.
+# Needs curl, jq and base64.
 #
 #   scripts/smoke-test.sh [http://localhost:8080]
 set -euo pipefail
@@ -25,6 +26,7 @@ signup() {
   response=$(json "$B/auth/register" -d "{\"email\":\"$1-$RANDOM$RANDOM@example.com\",\"password\":\"correct-horse-battery\",\"dateOfBirth\":\"1998-04-12\",\"displayName\":\"$1\",\"consentVersion\":\"2026-09\"}")
   token=$(echo "$response" | jq -r '.token // empty')
   [ -n "$token" ] || fail "sign-up: $response"
+  echo "$response" | jq -r .refreshToken > "$WORK/$1.refresh"
   response=$(json "$B/verification/liveness" -H "Authorization: Bearer $token" -d '{"sessionToken":"dev-pass"}')
   token=$(echo "$response" | jq -r '.token.token // empty')
   [ -n "$token" ] || fail "verification: $response"
@@ -60,6 +62,14 @@ if grep -aq Lavc "$WORK/served.jpg"; then fail "served photo still carries metad
 
 SIGNAL=$(json "$B/signals" -H "Authorization: Bearer $RAVI" -d "{\"momentId\":\"$MOMENT\",\"reaction\":\"MADE_ME_SMILE\",\"activityRef\":\"trek\"}" | jq -r .id)
 [ "$(code -X POST "$B/signals/$SIGNAL/reveal" -H "Authorization: Bearer $ASHA")" = 200 ] || fail "reveal"
+
+# Sessions: the refresh token rotates (the old one is then refused), and signing out cuts the access token off.
+RENEWED=$(json "$B/auth/refresh" -d "{\"refreshToken\":\"$(cat "$WORK/ravi.refresh")\"}")
+RAVI2=$(echo "$RENEWED" | jq -r '.token // empty')
+[ -n "$RAVI2" ] || fail "refresh: $RENEWED"
+[ "$(code "$B/auth/sessions" -H "Authorization: Bearer $RAVI2")" = 200 ] || fail "renewed token"
+[ "$(code -X POST "$B/auth/logout-all" -H "Authorization: Bearer $RAVI2")" = 204 ] || fail "sign out everywhere"
+[ "$(code "$B/auth/sessions" -H "Authorization: Bearer $RAVI2")" = 401 ] || fail "token still works after sign-out"
 
 [ "$(code -X DELETE "$B/privacy/account?confirm=DELETE" -H "Authorization: Bearer $ASHA")" = 204 ] || fail "erasure"
 GONE=

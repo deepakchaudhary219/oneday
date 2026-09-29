@@ -20,7 +20,9 @@ public class Notice {
 		/** A report against you was upheld and you were warned. */
 		WARNING,
 		/** The outcome of a report you filed. */
-		REPORT_UPDATE
+		REPORT_UPDATE,
+		/** Something happened to your sign-ins, e.g. a device was signed out because its session was copied. */
+		SECURITY
 	}
 
 	@Id

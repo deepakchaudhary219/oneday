@@ -111,12 +111,17 @@ class PhoneLoginIntegrationTest extends ApiTestSupport {
 	}
 
 	@Test
-	void suspendedAccountsAreRefusedCleanly() throws Exception {
+	void suspendedAccountsSignInToARestrictedAccount() throws Exception {
 		String national = randomNational();
 		String token = JsonPath.read(body(verify(requestCode(national), national, lastCode("+91" + national), adult())),
 				"$.token.token");
 		jdbc.update("update users set account_status = 'SUSPENDED' where id = ?", userIdOf(token));
-		verify(requestCode(national), national, lastCode("+91" + national), null).andExpect(status().isForbidden())
+		String restricted = JsonPath.read(body(verify(requestCode(national), national, lastCode("+91" + national), null)
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.newAccount").value(false))
+			.andExpect(jsonPath("$.token.accountStatus").value("SUSPENDED"))), "$.token.token");
+		getAs(restricted, "/privacy/export").andExpect(status().isOk());
+		getAs(restricted, "/profile/me").andExpect(status().isForbidden())
 			.andExpect(jsonPath("$.code").value("ACCOUNT_SUSPENDED"));
 	}
 

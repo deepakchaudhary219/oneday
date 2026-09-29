@@ -38,7 +38,7 @@ public class PhoneAuthController {
 	PhoneAuthResult verify(@Valid @RequestBody OtpVerify request, HttpServletRequest http) {
 		return otp.verify(request.challengeId(), request.phone(), request.code(),
 				new SignupDetails(request.displayName(), request.dateOfBirth(), request.consentVersion()),
-				http.getRemoteAddr());
+				ClientInfo.of(http));
 	}
 
 	record OtpRequest(@NotBlank @Size(max = 24) String phone) {

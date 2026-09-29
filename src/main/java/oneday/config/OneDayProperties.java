@@ -18,8 +18,14 @@ public record OneDayProperties(
 		Discovery discovery,
 		Signals signals) {
 
-	/** JWT signing secret (>= 32 bytes) and access-token lifetime. */
-	public record Security(String jwtSecret, Duration tokenTtl) {
+	/**
+	 * JWT signing secret (>= 32 bytes) and access-token lifetime; sessions end after {@code refreshTokenTtl}
+	 * without a refresh and after {@code sessionMaxAge} in any case. A refresh token presented again within
+	 * {@code refreshReuseGrace} of its rotation counts as a retry, later as theft. Sign-in attempts are limited
+	 * per account and per network.
+	 */
+	public record Security(String jwtSecret, Duration tokenTtl, Duration refreshTokenTtl, Duration sessionMaxAge,
+			Duration refreshReuseGrace, int maxSessions, int loginsPerAccountPerHour, int loginsPerIpPerHour) {
 	}
 
 	/** Signup abuse prevention (blueprint §47.6). */
