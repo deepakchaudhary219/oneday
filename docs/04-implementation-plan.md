@@ -38,10 +38,11 @@ The scope and status are listed in §6 below.
 
 ### M2 · Platform hardening (≈ 4–6 weeks) 🟡 *in progress; delivered items are listed in §7*
 - ✅ Redis for rate limits and probe budgets, so horizontal replicas share limits.
-- ✅ Media: pre-signed S3/MinIO upload with ownership checks and short-lived view URLs. ⏳ Transcoding + metadata-stripping worker, Layer-0 low-fi preview rendition, CDN.
+- ✅ Media: pre-signed S3/MinIO upload with ownership checks and short-lived view URLs. ✅ Processing worker that strips metadata (photos re-encoded; videos via ffmpeg) and writes the Layer-0 preview. ⏳ CDN in front of the bucket.
 - ✅ Manual-review console for `MANUAL_REVIEW`. ⏳ Liveness vendor adapter (replaces `DevLivenessVerifier`).
 - ✅ Phone OTP login (SMS port). ⏳ DLT-registered SMS adapter. ⏳ Device attestation (Play Integrity / App Attest) on signup and location updates.
-- ⏳ Push delivery for the **Local Pulse** at the user's chosen hour, with Discretion Mode copy.
+- ✅ Push delivery for the **Local Pulse** at the user's chosen hour and time zone, with Discretion Mode copy, plus in-app safety notices. ⏳ FCM/APNs adapter.
+- ✅ Deferred erasure under a safety hold (open P0 report, or enforcement within the 180-day IT Rules retention period).
 - ✅ Staff audit log and report-handling console with SLA timers. ⏳ Observability (OpenTelemetry), breach runbook, grievance flow.
 - ⏳ CI: GitHub Actions running tests against MySQL (Testcontainers). Deploy to an Indian cloud region.
 - **Exit:** load test at 5× the expected pilot peak. Staff can execute the takedown SLA.
@@ -75,13 +76,13 @@ The scope and status are listed in §6 below.
 
 ## 4. Engineering backlog (ordered)
 
-Done in M2 so far: Redis state store, staff console with manual review, media uploads with ownership checks, phone OTP (see §7).
+Done in M2 so far: Redis state store, staff console with manual review, media uploads with ownership checks, phone OTP, the media processing worker, deferred erasure under a safety hold, and Local Pulse push notifications (see §7).
 
-1. **Media processing worker (highest priority before real users).** Re-encode uploads, **strip EXIF/GPS and other metadata**, write the Layer-0 low-fi preview, and only then serve the object. Until it exists, clients must strip metadata before upload, because view URLs currently serve the original file.
-2. **Deferred erasure under legal hold.** If an account with open P0 reports asks to be erased, hide it immediately but keep the evidence until the review closes (POCSO). The current behaviour erases at once. This must be done without tipping off the account holder.
-3. Liveness vendor adapter (replaces `DevLivenessVerifier`) and a DLT-registered SMS adapter.
-4. Outbox table + domain events (`MomentPublished`, `SignalCreated`, `MutualReveal`, `UserBlocked`) to prepare for Kafka, and to drive notifications (Local Pulse push, the report-outcome notice for `WARN`).
-5. Refresh tokens + revocation list. Device attestation.
+1. **Vendor adapters** behind the ports that already exist: liveness/age estimation (replaces `DevLivenessVerifier`), a TRAI DLT-registered SMS sender, and FCM/APNs push.
+2. **CI and deployment:** GitHub Actions running the suite against MySQL (Testcontainers), with `redis-server` and `ffmpeg` in the image so those tests run too. A separate media-worker deployment (it needs ffmpeg). Deploy to an Indian cloud region.
+3. Refresh tokens + revocation list. Device attestation (Play Integrity / App Attest) on signup and location updates.
+4. Outbox table + domain events (`MomentPublished`, `SignalCreated`, `MutualReveal`, `UserBlocked`) to prepare for Kafka. Notifications are currently sent inline.
+5. Local Pulse at scale: the job scans every user with a device every 10 minutes, which is fine for one city. Index by (time zone, pulse hour) before multi-city.
 6. Pacing Guardian heuristics on the message stream (v2).
 7. Normalised `profile_languages` / `profile_home_region` indexes when Roots scope needs SQL-side filtering.
 8. Re-verification every 90 days (blueprint §21.4) as a scheduled job.
@@ -126,6 +127,21 @@ Done in M2 so far: Redis state store, staff console with manual review, media up
 | Trust & Safety console: staff roles in tokens with a database re-check, manual-review decisions (approve / retry / reject+suspend), report queue by priority with SLA due times and overdue flags, claim/resolve, suspend/reinstate, staff management, append-only audit log | `staff`, `identity`, `safety` | ✅ |
 | Media uploads: pre-signed S3/MinIO PUT with signed type and length, random keys with no user id, moments may attach only the poster's own recent unused upload, short-lived view URLs, object deletion on moment delete and erasure | `media`, `moments` | ✅ |
 | Phone OTP login: non-enumerating requests, keyed-HMAC storage, 5-minute expiry, attempt lockout, per-number and per-network limits, 18+ and consent checks for phone signup | `identity`, `sms` | ✅ |
+| Media processing worker: uploads land in `incoming/`; photos are decoded with metadata ignored, checked for pixel bombs, orientation-corrected and re-encoded with no metadata; videos are transcoded by ffmpeg with `-map_metadata -1` plus a silent 4-second 360 px preview; only `READY` media can be attached; bad files are rejected with a reason; crash-recovery sweep. The dev object store is a real signed in-memory store. | `media` | ✅ |
+| Deferred erasure under a safety hold: an erasure request from an account with an open P0 report, or one suspended within the last 180 days, looks exactly like a normal erasure to its holder, but records are kept until the hold lifts and then erased automatically. Staff see pending erasures. | `privacy`, `identity`, `safety`, `staff` | ✅ |
+| Local Pulse push: device registration, per-user time zone, one push per local day at the chosen hour, only when there is something real to say, idempotent across replicas; Discretion Mode copy; safety-outcome notices to the warned user and the reporter (without revealing penalties) | `notify` | ✅ |
 
-**Verification:** 59 automated tests pass. They include the Redis implementations run against a real `redis-server` (skipped automatically where Redis is not installed) and an offline check that the real S3 presigner signs content type and length. The new tests found and fixed three bugs: phone signups refused for being under 18 returned 500 instead of 422, phone login by a suspended account returned 500 instead of 403, and data export crashed for accounts without an email.
+**Verification:** 75 automated tests pass, with nothing skipped in this environment. They include:
+- the Redis implementations, run against a real `redis-server`;
+- video processing, run against real `ffmpeg`;
+- a check that a GPS-like secret planted in photo EXIF/APP1/comment segments and in MP4 container tags is absent from the served files;
+- an offline check that the real S3 presigner signs content type and length.
 
+Where `redis-server` or `ffmpeg` is missing, those tests skip automatically. The new tests found and fixed seven bugs:
+- a phone signup refused for being under 18 returned 500 instead of 422;
+- phone login by a suspended account returned 500 instead of 403;
+- data export crashed for accounts without an email;
+- suspended accounts could not export their data;
+- media processing run inline lost its status updates, because it joined an already-committed transaction;
+- the daily-pulse claim upserted instead of inserting, so a second pass sent a duplicate;
+- the device cap could evict the device being registered.

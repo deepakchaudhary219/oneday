@@ -28,8 +28,10 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
 **Milestone 2 so far:**
 - Redis-shared rate limits.
 - A Trust & Safety staff console (manual verification review, report queue with SLA timers, suspensions, audit log).
-- Pre-signed media uploads with ownership checks.
+- Pre-signed media uploads, with a worker that strips all metadata before anything is served.
 - Phone OTP login.
+- Deferred erasure under a safety hold.
+- Local Pulse push notifications.
 
 See [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) §7.
 
@@ -46,7 +48,8 @@ SPRING_PROFILES_ACTIVE=dev ./mvnw spring-boot:run
 The `dev` profile provides local-only secrets and local stand-ins:
 - **Liveness:** a deterministic dev verifier that accepts the session tokens `dev-pass`, `dev-low-confidence` and `dev-looks-minor`.
 - **SMS:** OTP codes are printed in the log.
-- **Media storage:** URLs are fake, under `media.dev.invalid`.
+- **Media storage:** a signed in-memory object store served by the app at `/dev-media/`.
+- **Push:** notifications are printed in the log.
 
 Any other deployment **must** set:
 
@@ -56,12 +59,14 @@ Any other deployment **must** set:
 | `ONEDAY_LOCATION_SECRET` | Key for stable per-pair distance jitter and hashed probe-budget cells (≥ 32 bytes) |
 | `ONEDAY_VERIFICATION_PROVIDER` | Liveness vendor adapter id. Defaults to `none`, which never auto-approves. |
 | `ONEDAY_MEDIA_PROVIDER` | `s3` (AWS S3 or MinIO) or `none`. With `s3`, also set `ONEDAY_MEDIA_BUCKET`, `ONEDAY_MEDIA_REGION` (default `ap-south-1`, Mumbai), and optionally `ONEDAY_MEDIA_ENDPOINT` (MinIO) and `ONEDAY_MEDIA_ACCESS_KEY` / `ONEDAY_MEDIA_SECRET_KEY`. Without static keys the default AWS credential chain is used. |
+| `ONEDAY_PUSH_PROVIDER` | Push adapter for the Local Pulse and safety notices (`none` disables push; in-app notices still work) |
+| `ONEDAY_FFMPEG` / `ONEDAY_FFPROBE` | Paths to ffmpeg/ffprobe for video processing. Without them, video uploads are refused rather than served unprocessed. |
 | `ONEDAY_SMS_PROVIDER` | SMS adapter for phone login (`none` disables it). India needs a TRAI DLT-registered sender. |
 | `ONEDAY_BOOTSTRAP_ADMIN_IDS` | Comma-separated **user ids** that act as the first Trust & Safety admins. Take the id from the `sub` of your own token. Ids, not emails: emails aren't ownership-verified yet. |
 
 **Multiple replicas:** add the `redis` profile (`SPRING_PROFILES_ACTIVE=prod,redis`, plus `ONEDAY_REDIS_HOST` / `ONEDAY_REDIS_PORT` / `ONEDAY_REDIS_PASSWORD`) so rate limits and location probe budgets are shared.
 
-**Media bucket:** keep it private, and add a lifecycle rule that expires `moments/` after about 3 days. Stories are ephemeral, and the rule backs up the best-effort deletes. Until the media-processing worker lands, clients must strip EXIF/GPS metadata before uploading.
+**Media bucket:** keep it private. Add lifecycle rules that expire `moments/` after about 3 days (stories are ephemeral, and the rule backs up the best-effort deletes) and `incoming/` after 1 day.
 
 ### Test
 
@@ -70,7 +75,7 @@ Any other deployment **must** set:
 ./mvnw test -Djava.version=21    # JDK 21
 ```
 
-Tests run the real security chain and the same Flyway migrations on H2 in MySQL mode. A controllable clock drives the 24 h story expiry and the 48 h Reaction Window. If `redis-server` is on the `PATH`, the Redis implementations are also tested against a throwaway instance; otherwise those tests are skipped.
+Tests run the real security chain and the same Flyway migrations on H2 in MySQL mode. A controllable clock drives the 24 h story expiry and the 48 h Reaction Window. If `redis-server` and `ffmpeg` are on the `PATH`, the Redis implementations and video processing are tested against the real tools; otherwise those tests are skipped.
 
 ### Try the core loop (dev profile)
 
@@ -80,8 +85,13 @@ reg() { curl -s $B/auth/register -H 'Content-Type: application/json' -d "{\"emai
 ver() { curl -s $B/verification/liveness -H "Authorization: Bearer $1" -H 'Content-Type: application/json' -d '{"sessionToken":"dev-pass"}' | jq -r .token.token; }
 ASHA=$(ver $(reg asha)); RAVI=$(ver $(reg ravi))
 for T in $ASHA $RAVI; do curl -s -X PUT $B/location -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"lat":12.9352,"lon":77.6245}' >/dev/null; done
-# 1) get an upload ticket (the app would now PUT the photo to .uploadUrl), 2) publish the moment with its mediaRef
-REF=$(curl -s $B/media/uploads -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' -d '{"kind":"PHOTO","contentType":"image/jpeg","sizeBytes":250000}' | jq -r .mediaRef)
+# Photo: ticket -> PUT the file to the signed URL -> complete (metadata is stripped) -> publish. Any JPEG works.
+SIZE=$(stat -c%s photo.jpg)
+T=$(curl -s $B/media/uploads -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' -d "{\"kind\":\"PHOTO\",\"contentType\":\"image/jpeg\",\"sizeBytes\":$SIZE}")
+REF=$(echo "$T" | jq -r .mediaRef)
+curl -s -X PUT "$(echo "$T" | jq -r .uploadUrl)" -H 'Content-Type: image/jpeg' --data-binary @photo.jpg
+curl -s $B/media/uploads/complete -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' -d "{\"mediaRef\":\"$REF\"}" | jq
+curl -s "$B/media/uploads/status?mediaRef=$REF" -H "Authorization: Bearer $ASHA" | jq   # READY
 M=$(curl -s $B/moments -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' \
   -d "{\"kind\":\"PHOTO\",\"mediaRef\":\"$REF\",\"activityTag\":\"trek\",\"shareScope\":\"PUBLIC_DISCOVERY\",\"capturedLive\":true}" | jq -r .id)
 curl -s "$B/discover/constellation" -H "Authorization: Bearer $RAVI" | jq

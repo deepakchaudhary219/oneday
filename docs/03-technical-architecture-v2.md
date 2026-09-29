@@ -50,7 +50,7 @@ Mobile app ──HTTPS──► Load balancer ──► OneDay (Spring Boot, N s
                                         probe budgets
 ```
 
-Rate limits and probe budgets sit behind two ports (`RateLimiter`, `ProbeBudget`). The default is in-memory, for a single node. The `redis` profile (`oneday.state.store=redis`) swaps in Redis implementations so that multiple replicas share one budget. Each check runs as one atomic Lua script. Probe-budget cells are stored as keyed HMACs with a 1 h TTL, so Redis never holds a readable location trail. Media goes straight from the client to S3-compatible storage through pre-signed URLs (§3).
+Rate limits and probe budgets sit behind two ports (`RateLimiter`, `ProbeBudget`). The default is in-memory, for a single node. The `redis` profile (`oneday.state.store=redis`) swaps in Redis implementations so that multiple replicas share one budget. Each check runs as one atomic Lua script. Probe-budget cells are stored as keyed HMACs with a 1 h TTL, so Redis never holds a readable location trail. Media goes straight from the client to S3-compatible storage through pre-signed URLs (§3). It lands under `incoming/` and is **never served from there**. A media worker downloads it, strips all metadata (photos are re-encoded in-process; videos go through ffmpeg), writes the served object under `moments/`, and deletes the original. The worker runs on a small pool inside the app. Once video volume grows it should become its own deployment, because it needs ffmpeg.
 
 ### 1.3 Extraction triggers (when to add the v1-doc components)
 
@@ -92,7 +92,8 @@ All endpoints except `/auth/*`, health and API docs require a bearer JWT. Endpoi
 | `GET /location` · `PUT /location` | | Foreground ping: raw lat/lon in, **only the snapped cell stored** |
 | `POST /location/pause` | | Removes the stored cell. Your moments immediately leave discovery. |
 | `PUT /location/safe-zone` / `DELETE` | | Marks the *current* cell's area as a Safe Zone |
-| `POST /media/uploads` | **V** | Upload ticket: pre-signed PUT (type and length are signed) plus a random `mediaRef` with no user id |
+| `POST /media/uploads` | **V** | Upload ticket: pre-signed PUT to `incoming/` (type and length are signed) plus a random `mediaRef` with no user id |
+| `POST /media/uploads/complete` · `GET /media/uploads/status?mediaRef=` | | Hand the upload to the worker; poll `AWAITING_UPLOAD → PROCESSING → READY / REJECTED` (with a reason) |
 | `POST /moments` | **V** | Publishes a live-captured moment (`FRIENDS_ONLY` / `PUBLIC_DISCOVERY`). A photo or video must reference the poster's **own** upload from the last 24 h, used once. |
 | `GET /moments/{id}` | | Layer-0 view for strangers (optional preview URL only). Full view for the owner and Connections. Media comes back as **short-lived URLs**, never storage keys. |
 | `GET /discover/constellation?scope=RADIUS\|CITY\|ROOTS\|LANGUAGE&activity=&page=` | | Bounded batch of Ambient nodes. Returns `caughtUp=true` at the end. |
@@ -109,9 +110,12 @@ All endpoints except `/auth/*`, health and API docs require a bearer JWT. Endpoi
 | `GET /conversations/{id}/balance` | | Qualitative Investment Balance for the viewer |
 | `POST /safety/blocks` · `POST /safety/reports` | | Target by `momentId`, `signalId` or `connectionId`. Internal user IDs are never exposed. |
 | `GET /pulse` | | Local Pulse digest (counts capped at "9+") |
-| `GET /privacy/export` · `DELETE /privacy/account` | | DPDP / GDPR access and erasure (also deletes media objects after commit) |
+| `GET /privacy/export` · `DELETE /privacy/account` | | DPDP / GDPR access and erasure (also deletes media objects after commit). Under a safety hold, erasure is deferred without any visible difference (§8). |
+| `POST /devices` · `POST /devices/unregister` | | Push-token registration (≤ 5 per account, tokens never echoed back) |
+| `GET /notices` · `POST /notices/{id}/read` | | In-app safety notices (warnings, report outcomes) |
 | `GET /staff/verification-queue` · `POST /staff/verification/{userId}/decision` | *moderator* | Manual review: `APPROVE`, `RETRY`, or `REJECT` (also suspends the account) |
-| `GET /staff/reports` · `POST /staff/reports/{id}/claim` · `POST /staff/reports/{id}/resolve` | *moderator* | Queue ordered by priority then age, with SLA `dueAt` and `overdue`. Resolve with `DISMISS`, `WARN` or `SUSPEND_USER`. |
+| `GET /staff/reports` · `POST /staff/reports/{id}/claim` · `POST /staff/reports/{id}/resolve` | *moderator* | Queue ordered by priority then age, with SLA `dueAt` and `overdue`. Resolve with `DISMISS`, `WARN` or `SUSPEND_USER`. The warned user and the reporter get notices. |
+| `GET /staff/erasures` | *moderator* | Erasures deferred by a safety hold, with the hold reason |
 | `POST /staff/accounts/{userId}/reinstate` · `GET/PUT/DELETE /staff/members/…` · `GET /staff/audit` | *admin* | Reinstate accounts, manage staff roles (never your own), read the append-only audit log |
 
 **No internal user ID is ever returned for another person.** Strangers are addressed through the moment or signal they are acting on, which prevents enumeration and scraping.
@@ -163,7 +167,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V4`)
+## 6. Data model (Flyway `V1`–`V7`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -179,6 +183,9 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `reports` | `id`, `reporter_id`, `reported_id`, `category`, `priority`, `status`, `details`, `assignee_id`, `resolution`, `resolved_by`, `resolved_at` | Kept after erasure where the law requires it (reporter reference nulled) |
 | `staff_members` / `staff_actions` (V2) | role per user; append-only audit rows | Audit rows are kept after erasure of the subject |
 | `media_uploads` (V3) | `owner_id`, random `object_key`, `kind`, `content_type`, `size_bytes` | The only link between a media object and an account |
+| `media_uploads` processing columns (V5) | `incoming_key`, `status`, `reject_reason`, `attempts`, `updated_at` | Rows from before processing existed default to `REJECTED`, so they can never be attached |
+| `users` hold columns (V6) | `erasure_requested_at`, `held_identifiers` | Set only while a deferred erasure waits for a hold to lift |
+| `devices` · `pulse_deliveries` · `notices` (V7), `profiles.time_zone` | push tokens; one claim row per (user, local date); notices | The claim row's primary key makes the daily pulse idempotent across replicas |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 
 ---
@@ -209,7 +216,8 @@ PENDING ──reveal──► REVEALED  (Connection + Conversation created atomi
 | DPDP: breach notice within 72 h | Runbook, audit log, on-call rota, contact template for the Data Protection Board | M2 |
 | DPDP: Consent Managers (registration opens 13 Nov 2026) | A consent API that accepts and honours consent artefacts | M3 |
 | IT Rules: grievance officer, takedown SLAs (some 2–3 h) | Staff console: priority queue with due times (P0 2 h) and overdue flags, suspension, append-only audit trail ✅. On-call rota and grievance UI still to come. | M2 (console ✅) |
-| Photo metadata (location in EXIF) | Media processing worker strips metadata before serving. Until then, clients must strip it before upload. | M2 (next) |
+| Photo metadata (location in EXIF, MP4 location atoms) | The media worker re-encodes every upload without metadata before anything is served. Tests plant a GPS-like secret and assert it is gone. | M2 ✅ |
+| Evidence retention vs. erasure (POCSO; IT Rules 2021 Rule 3(1)(g), 180 days) | Erasure is deferred while an open P0 report exists or within 180 days of an enforcement action. The account is hidden and its identifiers released at once, with no tip-off, and it is erased automatically when the hold lifts. | M2 ✅ |
 | IT Rules 2026 SGI labelling | Live-capture-only Discovery Mode. Labelled lenses in Friend Mode. SGI declaration for any future upload path. | M1 (capture flag) / M2 (client attestation) |
 | POCSO mandatory reporting | Evidence-preservation hold on P0 reports, counsel-designed reporting SOP | Before public launch |
 | Data residency | Host in Indian cloud regions (e.g. Mumbai / Hyderabad) for Indian users | M2 infra |
