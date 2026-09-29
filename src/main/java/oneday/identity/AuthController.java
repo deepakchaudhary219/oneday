@@ -1,0 +1,35 @@
+package oneday.identity;
+
+import oneday.security.TokenService.IssuedToken;
+
+import jakarta.servlet.http.HttpServletRequest;
+import jakarta.validation.Valid;
+
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+@RestController
+@RequestMapping("/auth")
+public class AuthController {
+
+	private final AuthService auth;
+
+	public AuthController(AuthService auth) {
+		this.auth = auth;
+	}
+
+	@PostMapping("/register")
+	@ResponseStatus(HttpStatus.CREATED)
+	IssuedToken register(@Valid @RequestBody RegisterRequest request, HttpServletRequest http) {
+		return auth.register(request, http.getRemoteAddr());
+	}
+
+	@PostMapping("/login")
+	IssuedToken login(@Valid @RequestBody LoginRequest request) {
+		return auth.login(request);
+	}
+}

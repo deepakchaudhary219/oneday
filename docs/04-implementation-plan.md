@@ -1,0 +1,117 @@
+# 04 · Implementation Plan
+
+> This plan turns `01-market-and-feasibility.md`, `02-product-blueprint-v2.md` and `03-technical-architecture-v2.md` into milestones with exit criteria. Durations are **estimates** for a small team. They assume the team in §2 and should be re-estimated after M2.
+
+---
+
+## 1. Guiding rules
+
+1. **Ship the core loop in one city before anything else.** The core loop is: live story → nearby discovery → signal → reveal → chat.
+2. **Safety ships before the feature it protects.** The verification gate comes before contact. Date Mode comes before dating marketing. Takedown on-call comes before public launch.
+3. **Density gates, not calendar dates, decide expansion** (§5).
+4. **Build it in the modular monolith first.** Extract a service only when a trigger in Tech Arch v2 §1.3 fires.
+
+## 2. Team (minimum viable)
+
+| Role | Count | Notes |
+|---|---|---|
+| Founder / PM | 1 | Owns the density playbook and the decisions in blueprint v2 §13 |
+| Backend (Java/Spring) | 2 | One of them owns location privacy and safety |
+| Mobile (Flutter recommended; Android-first QA) | 2 | Camera, constellation UI, chat |
+| Product designer | 1 | Visual system from blueprint §23 and §30 |
+| Trust & Safety lead + contracted 24×7 moderators | 1 + vendor | Needed **before public launch** (IT Rules SLAs) |
+| Legal counsel (part-time / retained) | — | DPDP, IT Rules, POCSO, liability (§47.3) |
+| City lead + campus ambassadors | 1 + N | From the closed beta onwards |
+
+## 3. Milestones
+
+### M0 · Foundations & research (weeks 0–6, runs in parallel with M1–M2)
+- 20–30 user interviews in the launch city: women, migrants, students, young professionals.
+- Legal: DPDP notice and consent text, terms of service, grievance officer, POCSO SOP, insurance.
+- Vendors: liveness and age-estimation (bias test on Indian skin tones and budget cameras), SMS OTP, maps/tiles (only needed for Meeting Points), cloud region in India.
+- Design: visual system, Constellation motion study, microcopy in English, Hindi and Kannada.
+- **Exit:** founder decisions in blueprint v2 §13 are signed off.
+
+### M1 · Backend core loop ✅ *(started and delivered in this repository)*
+The scope and status are listed in §6 below.
+- **Exit:** the full core loop passes end-to-end tests. The verification gate is enforced. The location-privacy unit tests pass.
+
+### M2 · Platform hardening (≈ 4–6 weeks)
+- Redis for rate limits, probe budgets and sessions. Horizontal replicas.
+- Media pipeline: pre-signed S3 upload, transcoding worker, Layer-0 low-fi preview rendition, CDN.
+- Liveness vendor adapter (replaces `DevLivenessVerifier`). Manual-review console for `MANUAL_REVIEW`.
+- Phone OTP login. Device attestation (Play Integrity / App Attest) on signup and location updates.
+- Push delivery for the **Local Pulse** at the user's chosen hour, with Discretion Mode copy.
+- Observability (OpenTelemetry), audit log, breach runbook, grievance flow, report-handling console with SLA timers.
+- CI: GitHub Actions running tests against MySQL (Testcontainers). Deploy to an Indian cloud region.
+- **Exit:** load test at 5× the expected pilot peak. Staff can execute the takedown SLA.
+
+### M3 · Mobile app v1 (≈ 8–12 weeks, starts once M1 APIs are frozen)
+- Camera-first capture (live only in Discovery Mode). Share-scope picker.
+- Constellation view (radius dial, scopes, activity grouping, "caught up" screen). Heat overlay.
+- Digest (Local Pulse), Signal composer (4 reactions + activity reference), reveal and pass.
+- Friend-Mode chat, Investment Balance, soft exit, block/report sheets.
+- Preference Center (blueprint §32.1): radius, notification cadence, Dating Lens, discretion, Safe Zones, pause.
+- Vernacular: English, Hindi and Kannada at pilot.
+- **Exit:** internal dog-food with 50+ staff and friends for 2 weeks with no P0 safety bugs.
+
+### M4 · Dating-ready v1.5 (≈ 4–6 weeks)
+- Date Mode: plan confirmation, **time-boxed exact location** (both consent, auto-expire), trusted contact share, scheduled check-in, **one-tap 112**, end-of-date confirmation.
+- Safety-Verified Meeting Points (partner venues), Discovery Trails.
+- Mutual Debrief (reveals only overlapping positive answers). Couple Mode.
+- Incident-response protocol with local police liaison in the launch city (§47.2).
+- **Exit:** tabletop exercise of a real-world harm incident is completed. Legal sign-off.
+
+### M5 · Closed beta (≈ 6–8 weeks)
+- Ambassador-seeded cohorts from campuses and workplaces in 2–3 pilot neighbourhoods. Anchor events that tie into Roots (for example a regional food meet-up).
+- Gender-balance incentive for the under-represented side (blueprint §21.6).
+- **Exit:** Density Gate 1 (§5).
+
+### M6 · Public city pilot → v2
+- Open signups citywide. Paid acquisition in the channels users already use. Referral via "invite a friend to an Activity" (§41.5).
+- Start v2: Right Now (only after Gate 2), Plans and Rooms, Pulse Status + Spotify, Trusted Vouch, Pacing Guardian, Empathy Mirror, E2EE chat.
+
+**Indicative total from start to public pilot: about 6–8 months** with the team above. Most of the risk is in M5 density, not in engineering.
+
+## 4. Engineering backlog after M1 (ordered)
+
+1. Redis-backed `RateLimiter` and `ProbeBudget` (interfaces already exist).
+2. Outbox table + domain events (`MomentPublished`, `SignalCreated`, `MutualReveal`, `UserBlocked`) to prepare for Kafka.
+3. Liveness vendor adapter + manual-review endpoints (`/admin/verification`).
+4. Media upload (pre-signed URLs), `media_ref` validation, Layer-0 preview rendition.
+5. Refresh tokens + revocation list. Phone OTP.
+6. Pacing Guardian heuristics on the message stream (v2).
+7. Normalised `profile_languages` / `profile_home_region` indexes when Roots scope needs SQL-side filtering.
+8. Re-verification every 90 days (blueprint §21.4) as a scheduled job.
+
+## 5. Density gates (proposed hypotheses; calibrate in M5)
+
+| Gate | Condition (all of them, sustained for 4 weeks) | Unlocks |
+|---|---|---|
+| **Gate 1: beta → public pilot** | ≥ 2,000 weekly-active *verified* users inside pilot neighbourhoods · median Constellation batch at evening peak ≥ 8 nodes · signal→reveal rate ≥ 15% · P0 safety reports handled within SLA 100% · the smaller gender group ≥ 35% of weekly actives | Citywide signups, paid acquisition |
+| **Gate 2: pilot → Right Now** | ≥ 10,000 weekly-active verified users citywide · ≥ 25% of new Connections exchange ≥ 10 messages · ≥ 5% of Connections create a plan or meet · referral share of signups ≥ 10% by month 3 | Right Now, Plans at scale |
+| **Gate 3: second city** | Gate 2 holds for 8 weeks · CAC payback in line with retained value (blueprint §46.3) | Multi-city playbook (§28.3) |
+
+## 6. Milestone 1: delivered in this repository
+
+| Capability | Where | Status |
+|---|---|---|
+| Registration with DOB, **18+ refusal**, DPDP consent record, per-IP rate limit | `identity` | ✅ |
+| JWT auth; **verified-scope gate** in the filter chain + service re-check | `security`, `identity/UserGuard` | ✅ |
+| Liveness/age-estimate port with dev adapter, manual-review routing, fresh token on success | `verification` | ✅ |
+| Profile: activities, **Values Compass**, languages, **home region**, privacy, **Dating Lens**, private gender and "interested in", discretion, radius | `profile` | ✅ |
+| Location: cell-only storage, **velocity check, update interval, probe budget, Safe Zones**, pause | `geo` | ✅ |
+| Moments with share scope, live-capture flag, preview permission, 24 h expiry, Layer-0 vs full view | `moments` | ✅ |
+| Constellation: RADIUS / CITY / ROOTS / LANGUAGE scopes, activity filter, **stable-jitter bands**, direction, narrative explanations, bounded pages + "caught up" | `discovery` | ✅ |
+| **Heat** layer with k-anonymity | `discovery` | ✅ |
+| Signals: 4 reactions + activity reference, **Signal Budget**, **48 h Reaction Window**, digest, reveal, pass, Consent Trail, expiry sweep | `signals` | ✅ |
+| Connections, soft exit, **Mutual Spark** (one-sided never revealed) | `connections` | ✅ |
+| Friend-Mode chat + qualitative **Investment Balance** | `chat` | ✅ |
+| Block (propagates to connections and signals, both directions) and reports with **P0 routing** | `safety` | ✅ |
+| Local Pulse (capped counts, k-anon nearby activity, discretion copy) | `pulse` | ✅ |
+| DPDP export + erasure | `privacy` | ✅ |
+| Flyway schema, H2-backed integration tests, OpenAPI docs | `resources/db/migration`, `src/test` | ✅ |
+
+**Verification:** 34 automated tests pass (unit tests for geohash, location privacy and IDs, plus end-to-end API tests covering the full loop, the verification gate, under-18 refusal, the Signal Budget, 48 h expiry, anti-spoofing, Roots/Language scopes, Safe Zones, k-anonymous heat, bounded discovery, and export/erasure). The README's curl walkthrough was also run against a live server.
+
+**Run locally:** see the repository `README.md`.
