@@ -43,8 +43,10 @@ The scope and status are listed in §6 below.
 - ✅ Phone OTP login (SMS port). ⏳ DLT-registered SMS adapter. ⏳ Device attestation (Play Integrity / App Attest) on signup and location updates.
 - ✅ Push delivery for the **Local Pulse** at the user's chosen hour and time zone, with Discretion Mode copy, plus in-app safety notices. ⏳ FCM/APNs adapter.
 - ✅ Deferred erasure under a safety hold (open P0 report, or enforcement within the 180-day IT Rules retention period).
-- ✅ Staff audit log and report-handling console with SLA timers. ⏳ Observability (OpenTelemetry), breach runbook, grievance flow.
-- ⏳ CI: GitHub Actions running tests against MySQL (Testcontainers). Deploy to an Indian cloud region.
+- ✅ Staff audit log and report-handling console with SLA timers. ✅ Grievance redressal (IT Rules 3(2), DPDP s.13), including appeals from suspended accounts. ⏳ Breach runbook.
+- ✅ Sessions: 15-minute access tokens bound to a sign-in session, rotating refresh tokens with reuse detection, sign-out of one or all devices, and sessions ended on suspension and erasure. Password sign-in is rate limited.
+- ✅ Observability: request ids on every response, log line and error; Prometheus metrics with product counters and overdue-work gauges. ⏳ Distributed tracing (OpenTelemetry) once there is more than one service.
+- ✅ CI: GitHub Actions runs the suite on H2 and on MySQL 8.4, then builds the container image and smoke-tests the full compose stack. ⏳ Deploy to an Indian cloud region.
 - **Exit:** load test at 5× the expected pilot peak. Staff can execute the takedown SLA.
 
 ### M3 · Mobile app v1 (≈ 8–12 weeks, starts once M1 APIs are frozen)
@@ -76,11 +78,11 @@ The scope and status are listed in §6 below.
 
 ## 4. Engineering backlog (ordered)
 
-Done in M2 so far: Redis state store, staff console with manual review, media uploads with ownership checks, phone OTP, the media processing worker, deferred erasure under a safety hold, and Local Pulse push notifications (see §7).
+Done in M2 so far: Redis state store, staff console with manual review, media uploads with ownership checks, phone OTP, the media processing worker, deferred erasure under a safety hold, Local Pulse push notifications, CI with a container build, sessions with refresh tokens, grievance redressal, and observability (see §7).
 
 1. **Vendor adapters** behind the ports that already exist: liveness/age estimation (replaces `DevLivenessVerifier`), a TRAI DLT-registered SMS sender, and FCM/APNs push.
-2. **CI and deployment:** GitHub Actions running the suite against MySQL (Testcontainers), with `redis-server` and `ffmpeg` in the image so those tests run too. A separate media-worker deployment (it needs ffmpeg). Deploy to an Indian cloud region.
-3. Refresh tokens + revocation list. Device attestation (Play Integrity / App Attest) on signup and location updates.
+2. **Deployment:** an Indian cloud region, a separate media-worker deployment (same image, it needs ffmpeg), the management port on the internal network for Prometheus, and alerts on `oneday_reports_overdue`, `oneday_grievances_overdue` and `oneday_sessions_reuse_detected_total`.
+3. Device attestation (Play Integrity / App Attest) on signup and location updates. Cache the per-request session check (one primary-key lookup today) if it shows up in load tests.
 4. Outbox table + domain events (`MomentPublished`, `SignalCreated`, `MutualReveal`, `UserBlocked`) to prepare for Kafka. Notifications are currently sent inline.
 5. Local Pulse at scale: the job scans every user with a device every 10 minutes, which is fine for one city. Index by (time zone, pulse hour) before multi-city.
 6. Pacing Guardian heuristics on the message stream (v2).
@@ -130,8 +132,20 @@ Done in M2 so far: Redis state store, staff console with manual review, media up
 | Media processing worker: uploads land in `incoming/`; photos are decoded with metadata ignored, checked for pixel bombs, orientation-corrected and re-encoded with no metadata; videos are transcoded by ffmpeg with `-map_metadata -1` plus a silent 4-second 360 px preview; only `READY` media can be attached; bad files are rejected with a reason; crash-recovery sweep. The dev object store is a real signed in-memory store. | `media` | ✅ |
 | Deferred erasure under a safety hold: an erasure request from an account with an open P0 report, or one suspended within the last 180 days, looks exactly like a normal erasure to its holder, but records are kept until the hold lifts and then erased automatically. Staff see pending erasures. | `privacy`, `identity`, `safety`, `staff` | ✅ |
 | Local Pulse push: device registration, per-user time zone, one push per local day at the chosen hour, only when there is something real to say, idempotent across replicas; Discretion Mode copy; safety-outcome notices to the warned user and the reporter (without revealing penalties) | `notify` | ✅ |
+| CI and container: the suite on H2 and on MySQL 8.4 (fails if any test is skipped), a JRE 25 + ffmpeg image running as non-root, a `docker compose` stack (MySQL, Redis, SeaweedFS as the S3 store), and a smoke test of the whole loop against the stack | `.github`, `Dockerfile`, `compose.yaml`, `scripts` | ✅ |
+| Sessions: access tokens bound to a session and checked on every request; refresh tokens stored as SHA-256, rotated on use, a replay ends the session (30 s grace for retries after a lost response); idle and absolute expiry; 10-device cap; sign out one device or all; suspension and erasure end sessions; suspended accounts get a restricted sign-in for export and appeal; per-network and per-account sign-in limits | `security`, `identity` | ✅ |
+| Grievance redressal: file and track grievances (suspended accounts too); instant acknowledgement with reference and deadline; 24 h for intimate imagery, 72 h for content removal, 15 days otherwise; staff queue by deadline with overdue flags; answers audited and routed onwards (Grievance Appellate Committee or Data Protection Board); published officer contact | `grievance`, `staff` | ✅ |
+| Observability: `X-Request-Id` on every response, log line and error body; unhandled errors logged in context and answered without internals; Prometheus metrics (token-free only on the internal management port) with core-loop and safety counters and overdue-work gauges | `common`, `staff` | ✅ |
 
-**Verification:** 75 automated tests pass, with nothing skipped in this environment. They include:
+**Verification (round 4):** 91 automated tests pass, with nothing skipped, on both H2 and MySQL 8.4 (and on MySQL 8.0). CI runs both on JDK 25. The container image was built, and the compose stack passed the smoke test repeatedly. This round found and fixed:
+- intermittent media-processing failures against a non-AWS S3 store: the SDK's default streaming checksums, caught by the CI smoke test;
+- password sign-in had no rate limit;
+- stateless tokens could not be revoked, so a stolen token outlived sign-out and suspension;
+- suspended accounts could not sign in, so they could not exercise their data rights or appeal;
+- unhandled errors were logged after the request context was gone;
+- `mvnw` was committed without its executable bit.
+
+**Verification (round 3):** 75 automated tests passed, with nothing skipped in this environment. They included:
 - the Redis implementations, run against a real `redis-server`;
 - video processing, run against real `ffmpeg`;
 - a check that a GPS-like secret planted in photo EXIF/APP1/comment segments and in MP4 container tags is absent from the served files;

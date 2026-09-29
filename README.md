@@ -33,6 +33,9 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
 - Deferred erasure under a safety hold.
 - Local Pulse push notifications.
 - A container image, a production-shaped `docker compose` stack and CI on H2, MySQL 8.4 and the full stack.
+- Sign-in sessions: 15-minute access tokens, rotating refresh tokens with replay detection, and signing out of one or all devices.
+- Grievance redressal to the Grievance Officer (IT Rules 3(2), DPDP), including appeals from suspended accounts.
+- Observability: request ids on every response and log line, and Prometheus metrics with alertable backlog gauges.
 
 See [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) §7.
 
@@ -63,6 +66,8 @@ Any other deployment **must** set:
 | `ONEDAY_PUSH_PROVIDER` | Push adapter for the Local Pulse and safety notices (`none` disables push; in-app notices still work) |
 | `ONEDAY_FFMPEG` / `ONEDAY_FFPROBE` | Paths to ffmpeg/ffprobe for video processing. Without them, video uploads are refused rather than served unprocessed. |
 | `ONEDAY_SMS_PROVIDER` | SMS adapter for phone login (`none` disables it). India needs a TRAI DLT-registered sender. |
+| `ONEDAY_GRIEVANCE_OFFICER_NAME` / `_EMAIL` / `_ADDRESS` | The Grievance Officer's published contact (IT Rules 3(2), DPDP), served at `GET /grievances/officer`. Required before launch. |
+| `MANAGEMENT_SERVER_PORT` | An internal-only port (e.g. `8081`) for health probes and Prometheus scraping (`/actuator/prometheus`, token-free only there). Without it, metrics need an admin token. |
 | `ONEDAY_API_DOCS` | `true` publishes `/v3/api-docs` and Swagger UI. Off by default outside the `dev` profile. |
 | `ONEDAY_BOOTSTRAP_ADMIN_IDS` | Comma-separated **user ids** that act as the first Trust & Safety admins. Take the id from the `sub` of your own token. Ids, not emails: emails aren't ownership-verified yet. |
 
@@ -121,6 +126,22 @@ curl -s "$B/discover/constellation" -H "Authorization: Bearer $RAVI" | jq
 S=$(curl -s $B/signals -H "Authorization: Bearer $RAVI" -H 'Content-Type: application/json' -d "{\"momentId\":\"$M\",\"reaction\":\"MADE_ME_SMILE\",\"activityRef\":\"trek\"}" | jq -r .id)
 curl -s $B/signals/digest -H "Authorization: Bearer $ASHA" | jq
 curl -s -X POST $B/signals/$S/reveal -H "Authorization: Bearer $ASHA" | jq
+```
+
+### Sessions and grievances
+
+```bash
+# Sign-in returns a 15-minute access token and a refresh token; keep the refresh token in secure storage.
+L=$(curl -s $B/auth/login -H 'Content-Type: application/json' -H 'User-Agent: OneDay/1.0 (Android 16)' \
+  -d '{"email":"asha@example.com","password":"correct-horse-battery"}')
+# Swap it before the access token expires. Each refresh token works once: replaying an old one ends the session.
+curl -s $B/auth/refresh -H 'Content-Type: application/json' -d "{\"refreshToken\":\"$(echo "$L" | jq -r .refreshToken)\"}" | jq
+curl -s $B/auth/sessions -H "Authorization: Bearer $ASHA" | jq                       # signed-in devices
+curl -s -X POST $B/auth/logout-all -H "Authorization: Bearer $ASHA"                  # lost phone: sign out everywhere
+# Complaints and appeals to the Grievance Officer (a suspended account can sign in and appeal too).
+curl -s $B/grievances/officer | jq
+curl -s $B/grievances -H "Authorization: Bearer $RAVI" -H 'Content-Type: application/json' \
+  -d '{"category":"ACCOUNT_ACTION","description":"Please review my suspension."}' | jq  # reference + deadline
 ```
 
 ### Phone login (dev profile)

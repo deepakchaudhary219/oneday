@@ -52,6 +52,8 @@ Mobile app ──HTTPS──► Load balancer ──► OneDay (Spring Boot, N s
 
 Rate limits and probe budgets sit behind two ports (`RateLimiter`, `ProbeBudget`). The default is in-memory, for a single node. The `redis` profile (`oneday.state.store=redis`) swaps in Redis implementations so that multiple replicas share one budget. Each check runs as one atomic Lua script. Probe-budget cells are stored as keyed HMACs with a 1 h TTL, so Redis never holds a readable location trail. Media goes straight from the client to S3-compatible storage through pre-signed URLs (§3). It lands under `incoming/` and is **never served from there**. A media worker downloads it, strips all metadata (photos are re-encoded in-process; videos go through ffmpeg), writes the served object under `moments/`, and deletes the original. The worker runs on a small pool inside the app. Once video volume grows it should become its own deployment, because it needs ffmpeg.
 
+One container image (`Dockerfile`: JRE 25 + ffmpeg, non-root) runs everything. `compose.yaml` is a production-shaped local stack: MySQL 8.4, Redis, and SeaweedFS as the S3-compatible store. With a non-AWS store the S3 client sends checksums only where an API requires them, because streaming checksums are handled unevenly outside AWS. Set `MANAGEMENT_SERVER_PORT` (e.g. 8081) on an internal-only port for probes and Prometheus.
+
 ### 1.3 Extraction triggers (when to add the v1-doc components)
 
 | Component | Add when | First candidate to move |
@@ -80,12 +82,14 @@ Rate limits and probe budgets sit behind two ports (`RateLimiter`, `ProbeBudget`
 
 ## 3. API surface (Milestones 1–2)
 
-All endpoints except `/auth/*`, health and API docs require a bearer JWT. Endpoints marked **V** also require the `verified` scope: these are the *contact-reaching* actions from the progressive-verification model (v1 §4.3, blueprint §41.4).
+All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs and `GET /grievances/officer` require a bearer JWT. Endpoints marked **V** also require the `verified` scope: these are the *contact-reaching* actions from the progressive-verification model (v1 §4.3, blueprint §41.4).
 
 | Method & path | V | Purpose |
 |---|---|---|
 | `POST /auth/register` | | Email, password, DOB, consent version. **Under 18 → 422, nothing stored.** Rate-limited per IP. |
-| `POST /auth/login` | | Returns JWT |
+| `POST /auth/login` | | Starts a session: a 15-minute access token and a refresh token. Limited per network and per account. A suspended account gets a restricted session (`accountStatus: SUSPENDED`, no contact scopes). |
+| `POST /auth/refresh` | | Swaps the refresh token for a new pair and recomputes scopes. Replaying a rotated token ends the session. |
+| `POST /auth/logout` · `POST /auth/logout-all` · `GET /auth/sessions` · `DELETE /auth/sessions/{id}` | | Sign out this device or all of them, and list or sign out signed-in devices |
 | `POST /auth/otp/request` · `POST /auth/otp/verify` | | Phone login. The request step responds the same way whether or not the number is registered. Verify logs in, or signs up a new number (same 18+ and consent checks). Codes are keyed-HMAC, expire in 5 min and lock after 5 attempts. |
 | `POST /verification/liveness` | | Submits a liveness session token. Returns the verification result plus a **fresh token** with the `verified` scope. |
 | `GET/PATCH /profile/me` | | Own profile (activities, values, languages, home region, private gender / interested-in, privacy, Dating Lens, discretion, radius, pulse hour) |
@@ -112,9 +116,12 @@ All endpoints except `/auth/*`, health and API docs require a bearer JWT. Endpoi
 | `GET /pulse` | | Local Pulse digest (counts capped at "9+") |
 | `GET /privacy/export` · `DELETE /privacy/account` | | DPDP / GDPR access and erasure (also deletes media objects after commit). Under a safety hold, erasure is deferred without any visible difference (§8). |
 | `POST /devices` · `POST /devices/unregister` | | Push-token registration (≤ 5 per account, tokens never echoed back) |
-| `GET /notices` · `POST /notices/{id}/read` | | In-app safety notices (warnings, report outcomes) |
+| `GET /notices` · `POST /notices/{id}/read` | | In-app notices: warnings, report outcomes, security events, grievance updates |
+| `POST /grievances` · `GET /grievances` · `GET /grievances/officer` (public) | | Complaints and appeals to the Grievance Officer, suspended accounts included. The reference and deadline are the acknowledgement. |
 | `GET /staff/verification-queue` · `POST /staff/verification/{userId}/decision` | *moderator* | Manual review: `APPROVE`, `RETRY`, or `REJECT` (also suspends the account) |
 | `GET /staff/reports` · `POST /staff/reports/{id}/claim` · `POST /staff/reports/{id}/resolve` | *moderator* | Queue ordered by priority then age, with SLA `dueAt` and `overdue`. Resolve with `DISMISS`, `WARN` or `SUSPEND_USER`. The warned user and the reporter get notices. |
+| `GET /staff/grievances` · `POST /staff/grievances/{id}/answer` | *moderator* | Grievances by deadline with overdue flags. The answer (`UPHELD` / `PARTLY_UPHELD` / `NOT_UPHELD` plus a written response) is audited and tells the complainant where to escalate. |
+| `GET /actuator/prometheus` | *admin* | Metrics. Token-free only on the internal management port. |
 | `GET /staff/erasures` | *moderator* | Erasures deferred by a safety hold, with the hold reason |
 | `POST /staff/accounts/{userId}/reinstate` · `GET/PUT/DELETE /staff/members/…` · `GET /staff/audit` | *admin* | Reinstate accounts, manage staff roles (never your own), read the append-only audit log |
 
@@ -124,11 +131,16 @@ All endpoints except `/auth/*`, health and API docs require a bearer JWT. Endpoi
 
 ## 4. Security model
 
-- **JWT (HS256)** with the claims `sub` = user ID and `scope` = `member`, `member verified`, plus `moderator` / `admin` for staff. Staff scopes are issued only to active, verified accounts, and every staff request re-checks the role in the database. The first admin is bootstrapped by **user id** (`ONEDAY_BOOTSTRAP_ADMIN_IDS`), not by email, because emails are not ownership-verified yet. TTL is configurable (default 60 min). Set the secret through `ONEDAY_JWT_SECRET` (at least 32 bytes). The app fails fast if the secret is missing or too short.
+- **JWT (HS256)** with the claims `sub` = user ID, `sid` = session ID and `scope` = `member`, `member verified`, plus `moderator` / `admin` for staff. Staff scopes are issued only to active, verified accounts, and every staff request re-checks the role in the database. The first admin is bootstrapped by **user id** (`ONEDAY_BOOTSTRAP_ADMIN_IDS`), not by email, because emails are not ownership-verified yet. Access tokens last 15 minutes. Set the secret through `ONEDAY_JWT_SECRET` (at least 32 bytes). The app fails fast if the secret is missing or too short.
+- **Sessions:**
+  - Every sign-in is a row in `sessions`, and every request checks that its token's session is still live (one primary-key lookup). Signing out, suspension and erasure therefore take effect on the next request.
+  - Refresh tokens are `<sessionId>.<256-bit secret>`, stored as SHA-256 and rotated on every use.
+  - Presenting a rotated secret means two parties hold the session, so it ends for both and the holder gets a `SECURITY` notice. The exception is within 30 s, when it counts as a retry after a lost response.
+  - Sessions end after 30 idle days, after 180 days in any case, and beyond 10 devices (the least recently used goes first).
 - **Gate:** `SecurityFilterChain` requires `SCOPE_verified` on every **V** route. Services *also* call `UserGuard.requireContactAllowed(userId)`, which re-reads account status and verification status. A token issued before a suspension or re-verification failure therefore cannot be used for contact actions.
 - **Signup abuse (blueprint §47.6):** per-IP rate limit on `/auth/register` in M1. M2 adds Play Integrity / App Attest device attestation.
-- **Passwords:** delegating encoder (bcrypt default). **Phone OTP** (M2) is the primary login method in India. Phone-only accounts have no password and cannot use password login.
-- **Error contract:** RFC 9457 `ProblemDetail` with a stable `code` property.
+- **Passwords:** delegating encoder (bcrypt default). Sign-in attempts are limited per network (100/h) and per account (10/h). **Phone OTP** (M2) is the primary login method in India. Phone-only accounts have no password and cannot use password login.
+- **Error contract:** RFC 9457 `ProblemDetail` with a stable `code` property and the `requestId`. Unexpected errors return `INTERNAL_ERROR` without internals.
 
 ---
 
@@ -167,7 +179,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V7`)
+## 6. Data model (Flyway `V1`–`V9`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -186,6 +198,8 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `media_uploads` processing columns (V5) | `incoming_key`, `status`, `reject_reason`, `attempts`, `updated_at` | Rows from before processing existed default to `REJECTED`, so they can never be attached |
 | `users` hold columns (V6) | `erasure_requested_at`, `held_identifiers` | Set only while a deferred erasure waits for a hold to lift |
 | `devices` · `pulse_deliveries` · `notices` (V7), `profiles.time_zone` | push tokens; one claim row per (user, local date); notices | The claim row's primary key makes the daily pulse idempotent across replicas |
+| `sessions` (V8) | `user_id`, `refresh_hash`, `previous_hash`, `rotated_at`, `device`, `last_used_at`, `expires_at`, `ended_at`, `end_reason` | Hashes only, never a usable secret. Ended rows are purged after 30 days. |
+| `grievances` (V9) | `reference` UQ, `user_id`, `category`, `description`, `status`, `resolve_by`, `outcome`, `response`, `resolved_by` | `resolve_by` is set from the category's legal deadline when the grievance is filed |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 
 ---
@@ -211,11 +225,11 @@ PENDING ──reveal──► REVEALED  (Connection + Conversation created atomi
 | Obligation | Engineering control | Milestone |
 |---|---|---|
 | DPDP: notice & consent | `consent_version` + `consented_at` recorded at signup. Notice text is versioned in the app. | M1 ✅ |
-| DPDP: rights (access, erasure, correction, grievance) | `GET /privacy/export`, `DELETE /privacy/account`, `PUT /profile/me`. Grievance contact in the app. | M1 ✅ (grievance UI M2) |
+| DPDP: rights (access, erasure, correction, grievance) | `GET /privacy/export`, `DELETE /privacy/account`, `PUT /profile/me`, `POST /grievances` (category `PRIVACY`, answer routed to the Data Protection Board if not satisfied). Suspended accounts keep these rights through a restricted sign-in. | M1 ✅ / M2 ✅ |
 | DPDP: children | **Refuse under-18 at signup** (nothing persisted). Liveness age-estimate cross-check. `UNDERAGE_SUSPECTED` reports go to P0. | M1 ✅ |
 | DPDP: breach notice within 72 h | Runbook, audit log, on-call rota, contact template for the Data Protection Board | M2 |
 | DPDP: Consent Managers (registration opens 13 Nov 2026) | A consent API that accepts and honours consent artefacts | M3 |
-| IT Rules: grievance officer, takedown SLAs (some 2–3 h) | Staff console: priority queue with due times (P0 2 h) and overdue flags, suspension, append-only audit trail ✅. On-call rota and grievance UI still to come. | M2 (console ✅) |
+| IT Rules: grievance officer, takedown SLAs (some 2–3 h) | Staff console: priority queue with due times (P0 2 h) and overdue flags, suspension, append-only audit trail ✅. Grievances (rule 3(2)): published officer contact, acknowledgement on filing, 24 h for intimate imagery, 72 h for content removal and 15 days otherwise, appeals from suspended accounts, and escalation to the Grievance Appellate Committee ✅. On-call rota still to come. | M2 ✅ |
 | Photo metadata (location in EXIF, MP4 location atoms) | The media worker re-encodes every upload without metadata before anything is served. Tests plant a GPS-like secret and assert it is gone. | M2 ✅ |
 | Evidence retention vs. erasure (POCSO; IT Rules 2021 Rule 3(1)(g), 180 days) | Erasure is deferred while an open P0 report exists or within 180 days of an enforcement action. The account is hidden and its identifiers released at once, with no tip-off, and it is erased automatically when the hold lifts. | M2 ✅ |
 | IT Rules 2026 SGI labelling | Live-capture-only Discovery Mode. Labelled lenses in Friend Mode. SGI declaration for any future upload path. | M1 (capture flag) / M2 (client attestation) |
@@ -225,9 +239,21 @@ PENDING ──reveal──► REVEALED  (Connection + Conversation created atomi
 ---
 
 ## 9. Observability
-Actuator health/info/metrics are exposed. M2 adds OpenTelemetry traces and structured audit logs for safety-relevant actions (block, report, reveal, erasure). **Raw coordinates and message bodies are never logged.**
+- **Request ids:** every request gets an `X-Request-Id` (the client's own if it is well formed). It appears on every log line of the request, on every response and in every error body, so a user's report leads to the exact log lines.
+- **Metrics:** Prometheus at `/actuator/prometheus`, token-free only on the internal management port. Besides JVM, HTTP and pool metrics:
+  - core-loop counters: `oneday_moments_published`, `oneday_signals_sent`, `oneday_reveals`;
+  - safety counters: `oneday_reports_filed{priority}`, `oneday_auth_logins{outcome}`, `oneday_sessions_reuse_detected`, `oneday_media_processed{outcome}`, `oneday_grievances_filed{category}`;
+  - gauges to alert on: `oneday_reports_overdue{priority}` and `oneday_grievances_overdue`.
+
+  Tags are fixed vocabularies, never user ids or places.
+- **Audit:** staff decisions go to the append-only `staff_actions` log.
+- **Never logged:** raw coordinates and message bodies.
+- **Later:** OpenTelemetry traces once there is more than one service.
 
 ## 10. Test strategy
 - **Unit:** `Geohash`, `LocationPrivacy` (determinism, symmetry, band edges, safe-zone collapse), UUIDv7 ordering.
 - **Integration (MockMvc + H2 + Flyway):** the full core loop runs end to end: register → verification gate (403 before verifying) → location → moment → constellation → signal → digest → reveal → chat → spark (one-sided hidden, mutual shown) → block → export → erase. Also covers under-18 refusal, the Signal Budget, 48 h expiry with a controlled clock, and the anti-spoof velocity check.
-- **CI (M2):** the same suite against MySQL via Testcontainers.
+- **CI (M2) ✅:**
+  - The same suite runs on H2 and on MySQL 8.4 (a service container), with ffmpeg and redis-server installed. A skipped test fails the build.
+  - The container image is built and the compose stack is started.
+  - `scripts/smoke-test.sh` then drives the whole loop over HTTP: signed upload to the real S3 API, metadata stripped, reveal, refresh-token rotation, sign-out and erasure.
