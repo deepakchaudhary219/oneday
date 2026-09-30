@@ -10,7 +10,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HexFormat;
 import java.util.Optional;
-import java.util.regex.Pattern;
 
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
@@ -19,6 +18,7 @@ import oneday.common.ApiException;
 import oneday.common.RateLimiter;
 import oneday.config.OneDayProperties;
 import oneday.security.TokenService.IssuedToken;
+import oneday.sms.PhoneNumbers;
 import oneday.sms.SmsSender;
 
 import org.springframework.beans.factory.ObjectProvider;
@@ -38,8 +38,6 @@ import org.springframework.transaction.annotation.Transactional;
  */
 @Service
 public class OtpService {
-
-	private static final Pattern E164 = Pattern.compile("\\+[1-9]\\d{7,14}");
 
 	private final OtpChallengeRepository challenges;
 
@@ -133,22 +131,8 @@ public class OtpService {
 		challenges.deleteCreatedBefore(clock.instant().minus(Duration.ofDays(1)));
 	}
 
-	/** E.164 normalisation; bare 10-digit and 0-prefixed national numbers get the default country code. */
 	String normalize(String raw) {
-		String digits = raw == null ? "" : raw.replaceAll("[\\s\\-().]", "");
-		if (digits.startsWith("00")) {
-			digits = "+" + digits.substring(2);
-		}
-		else if (digits.matches("0\\d{10}")) {
-			digits = settings.defaultCountryCode() + digits.substring(1);
-		}
-		else if (digits.matches("\\d{10}")) {
-			digits = settings.defaultCountryCode() + digits;
-		}
-		if (!E164.matcher(digits).matches()) {
-			throw ApiException.badRequest("INVALID_PHONE", "Enter a mobile number, e.g. 98765 43210 or +91 98765 43210");
-		}
-		return digits;
+		return PhoneNumbers.normalize(raw, settings.defaultCountryCode());
 	}
 
 	private String hmac(String value) {

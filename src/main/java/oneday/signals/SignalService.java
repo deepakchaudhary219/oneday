@@ -19,6 +19,8 @@ import oneday.config.OneDayProperties;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionOrigin;
 import oneday.connections.ConnectionService;
+import oneday.events.DomainEvent;
+import oneday.events.EventPublisher;
 import oneday.identity.UserGuard;
 import oneday.moments.Moment;
 import oneday.moments.MomentService;
@@ -65,10 +67,13 @@ public class SignalService {
 
 	private final ProductMetrics metrics;
 
+	private final EventPublisher events;
+
 	public SignalService(SignalRepository signals, MomentService moments, ProfileService profiles,
 			ConnectionService connections, ChatService chat, UserGuard guard, BlockChecker blocks, Clock clock,
-			OneDayProperties properties, ProductMetrics metrics) {
+			OneDayProperties properties, ProductMetrics metrics, EventPublisher events) {
 		this.metrics = metrics;
+		this.events = events;
 		this.signals = signals;
 		this.moments = moments;
 		this.profiles = profiles;
@@ -88,8 +93,8 @@ public class SignalService {
 		if (recipientId.equals(senderId)) {
 			throw ApiException.unprocessable("CANNOT_SIGNAL_SELF", "That's your own moment");
 		}
-		if (blocks.isBlockedEitherWay(senderId, recipientId)
-				|| guard.reachableAmong(List.of(recipientId)).isEmpty()) {
+		if (blocks.isBlockedEitherWay(senderId, recipientId) || guard.reachableAmong(List.of(recipientId)).isEmpty()
+				|| !connections.inCouple(List.of(senderId, recipientId)).isEmpty()) {
 			throw ApiException.notFound("Moment");
 		}
 		if (connections.areConnected(senderId, recipientId)) {
@@ -115,6 +120,7 @@ public class SignalService {
 		Signal signal = signals
 			.save(new Signal(senderId, recipientId, momentId, reaction, activityRef, now, windowEnd));
 		metrics.signalSent();
+		events.publish(new DomainEvent.SignalSent(signal.getId(), senderId, recipientId));
 		return SentSignalView.of(signal);
 	}
 
@@ -174,6 +180,7 @@ public class SignalService {
 		signal.resolve(Signal.Status.REVEALED, now);
 		signals.archivePendingBetween(senderId, recipientId, now);
 		metrics.mutualReveal();
+		events.publish(new DomainEvent.MutualRevealed(connection.getId(), connection.getUserA(), connection.getUserB()));
 		return new RevealView(connection.getId(), conversation.getId(), conversation.getSeedContext());
 	}
 

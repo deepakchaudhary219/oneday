@@ -68,14 +68,19 @@ public class SecurityConfig {
 				.permitAll()
 				.requestMatchers(HttpMethod.GET, "/grievances/officer")
 				.permitAll()
+				// A trusted contact has no account: the unguessable link is the credential (Date Mode).
+				.requestMatchers(HttpMethod.GET, "/date-share/*")
+				.permitAll()
 				.requestMatchers(scrapeOnManagementPort)
 				.permitAll()
 				.requestMatchers("/actuator/prometheus")
 				.hasAuthority("SCOPE_admin")
 				.requestMatchers(HttpMethod.POST, "/moments", "/media/uploads", "/signals", "/signals/*/reveal",
-						"/conversations/*/messages", "/connections/*/spark")
+						"/conversations/*/messages", "/connections/*/spark",
+						"/connections/*/couple", "/dates", "/dates/*/accept")
 				.hasAuthority(VERIFIED)
-				.requestMatchers("/staff/members/**", "/staff/audit", "/staff/accounts/**").hasAuthority("SCOPE_admin")
+				.requestMatchers("/staff/members/**", "/staff/audit", "/staff/accounts/**", "/staff/events/**")
+				.hasAuthority("SCOPE_admin")
 				.requestMatchers("/staff/**").hasAuthority("SCOPE_moderator")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));

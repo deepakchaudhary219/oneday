@@ -5,6 +5,7 @@ import java.util.List;
 
 import oneday.chat.ChatService;
 import oneday.chat.Conversation;
+import oneday.connections.ConnectionService.CoupleView;
 import oneday.connections.ConnectionService.SparkView;
 import oneday.profile.ProfileService;
 
@@ -41,7 +42,7 @@ public class ConnectionController {
 			String conversationId = chat.forConnection(c.getId()).map(Conversation::getId).orElse(null);
 			String name = profiles.require(c.otherThan(me)).getDisplayName();
 			return new ConnectionView(c.getId(), conversationId, name, c.getOrigin(), c.getCreatedAt(),
-					c.isMutualSpark());
+					c.isMutualSpark(), c.isCouple());
 		}).toList();
 	}
 
@@ -55,6 +56,16 @@ public class ConnectionController {
 		return connections.spark(jwt.getSubject(), connectionId, false);
 	}
 
+	@PostMapping("/{connectionId}/couple")
+	public CoupleView couple(@AuthenticationPrincipal Jwt jwt, @PathVariable String connectionId) {
+		return connections.couple(jwt.getSubject(), connectionId, true);
+	}
+
+	@DeleteMapping("/{connectionId}/couple")
+	public CoupleView leaveCouple(@AuthenticationPrincipal Jwt jwt, @PathVariable String connectionId) {
+		return connections.couple(jwt.getSubject(), connectionId, false);
+	}
+
 	/** Soft exit: silent for the other person. */
 	@PostMapping("/{connectionId}/exit")
 	public ResponseEntity<Void> exit(@AuthenticationPrincipal Jwt jwt, @PathVariable String connectionId) {
@@ -62,8 +73,11 @@ public class ConnectionController {
 		return ResponseEntity.noContent().build();
 	}
 
-	/** {@code mutualSpark} is true only when both sides sparked; a one-sided spark is never exposed. */
+	/**
+	 * {@code mutualSpark} is true only when both sides sparked, {@code coupleMode} only when both confirmed; a
+	 * one-sided spark or confirmation is never exposed.
+	 */
 	public record ConnectionView(String id, String conversationId, String displayName, ConnectionOrigin origin,
-			Instant since, boolean mutualSpark) {
+			Instant since, boolean mutualSpark, boolean coupleMode) {
 	}
 }

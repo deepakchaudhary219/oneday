@@ -10,6 +10,8 @@ import java.util.stream.Stream;
 import oneday.common.ApiException;
 import oneday.common.ProductMetrics;
 import oneday.connections.ConnectionService;
+import oneday.events.DomainEvent;
+import oneday.events.EventPublisher;
 import oneday.identity.UserGuard;
 import oneday.moments.Moment;
 import oneday.moments.MomentService;
@@ -41,12 +43,15 @@ public class SafetyService {
 
 	private final ProductMetrics metrics;
 
+	private final EventPublisher events;
+
 	private final SafetyProperties safetyProperties;
 
 	public SafetyService(BlockRepository blocks, ReportRepository reports, MomentService moments,
 			SignalService signals, ConnectionService connections, UserGuard guard, Clock clock,
-			SafetyProperties safetyProperties, ProductMetrics metrics) {
+			SafetyProperties safetyProperties, ProductMetrics metrics, EventPublisher events) {
 		this.metrics = metrics;
+		this.events = events;
 		this.blocks = blocks;
 		this.reports = reports;
 		this.moments = moments;
@@ -67,6 +72,7 @@ public class SafetyService {
 		String other = resolve(userId, target);
 		if (!blocks.existsByBlockerIdAndBlockedId(userId, other)) {
 			blocks.save(new Block(userId, other, clock.instant()));
+			events.publish(new DomainEvent.UserBlocked(userId, other));
 		}
 		connections.endBetween(userId, other);
 		signals.archiveBetween(userId, other);
