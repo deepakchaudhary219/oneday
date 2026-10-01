@@ -78,6 +78,12 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
   - consent is recorded at the first action that uses the data (sharing location, setting the Dating Lens, adding a home region, answering the wellbeing question);
   - withdrawing deletes that data at once and blocks its use until it is granted again;
   - the history is included in the export and is pseudonymised, not deleted, on erasure.
+- **End-to-end encrypted chat** (Friend Mode). The server is a key directory and ciphertext relay (`/e2ee/...`, `POST /conversations/{id}/encrypted`) and never holds a private key or an unreported message.
+  - Devices are tied to sign-in sessions; signing out a lost phone unlinks it.
+  - Envelopes are deleted as soon as each device acknowledges them.
+  - Once encrypted, a conversation never goes back to plaintext.
+  - **Message franking** lets someone report an encrypted message with proof of exactly what was sent.
+  - The Empathy Mirror runs on the device from `GET /empathy/lexicon`.
 - **Safety from every surface:** block or report by `momentId`, `signalId`, `connectionId`, `planId`, `roomMessageId`, `rightNowId`, `dateId` or `pulseStatusId`.
 
 **Scale and platform** (see [`docs/06-system-design.md`](docs/06-system-design.md)):

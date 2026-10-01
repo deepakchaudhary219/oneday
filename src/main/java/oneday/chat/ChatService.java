@@ -16,6 +16,8 @@ import java.util.Set;
 import oneday.common.ApiException;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionService;
+import oneday.e2ee.E2eeService;
+import oneday.e2ee.E2eeService.Outgoing;
 import oneday.empathy.EmpathyMirror;
 import oneday.empathy.EmpathyMirror.Concern;
 import oneday.identity.UserGuard;
@@ -50,10 +52,13 @@ public class ChatService {
 
 	private final EmpathyMirror empathy;
 
+	private final E2eeService e2ee;
+
 	public ChatService(ConversationRepository conversations, MessageRepository messages,
 			ConnectionService connections, UserGuard guard, BlockChecker blocks, Clock clock, RealtimeService realtime,
-			PacingGuardian pacing, EmpathyMirror empathy) {
+			PacingGuardian pacing, EmpathyMirror empathy, E2eeService e2ee) {
 		this.empathy = empathy;
+		this.e2ee = e2ee;
 		this.realtime = realtime;
 		this.pacing = pacing;
 		this.conversations = conversations;
@@ -83,6 +88,9 @@ public class ChatService {
 		if (!connection.isActive() || blocks.isBlockedEitherWay(userId, connection.otherThan(userId))) {
 			throw ApiException.conflict("CONVERSATION_INACTIVE", "This conversation is no longer active");
 		}
+		if (conversation.isE2ee()) {
+			throw ApiException.conflict("E2EE_REQUIRED", "This chat is end-to-end encrypted. Update the app to send.");
+		}
 		int streak = pacing.beforeSend(conversationId, userId);
 		var tone = empathy.reflect("chat", body, sendAnyway);
 		Message message = new Message(conversationId, userId, body.strip(), clock.instant());
@@ -93,6 +101,45 @@ public class ChatService {
 				new RealtimeMessage(conversationId, MessageView.of(message, connection.otherThan(userId))));
 		realtime.toUser(userId, "message", new RealtimeMessage(conversationId, MessageView.of(message, userId)));
 		return MessageView.of(message, userId).withHint(pacing.hintAfterSend(streak));
+	}
+
+	/**
+	 * An end-to-end encrypted message: the server stores metadata and the franking commitment, queues one
+	 * envelope per device, and never sees the text. The Empathy Mirror runs on the sender's device. The first
+	 * encrypted message makes the conversation encrypted for good.
+	 */
+	@Transactional
+	public MessageView sendEncrypted(String userId, String sessionId, String conversationId, int senderDevice,
+			byte[] frankingCommitment, List<Outgoing> envelopes) {
+		guard.requireContactAllowed(userId);
+		Conversation conversation = requireConversation(conversationId);
+		Connection connection = connections.requireMember(conversation.getConnectionId(), userId);
+		String other = connection.otherThan(userId);
+		if (!connection.isActive() || blocks.isBlockedEitherWay(userId, other)) {
+			throw ApiException.conflict("CONVERSATION_INACTIVE", "This conversation is no longer active");
+		}
+		if (frankingCommitment == null || frankingCommitment.length != 32) {
+			throw ApiException.badRequest("INVALID_COMMITMENT", "commitment is HMAC-SHA256: 32 bytes, base64");
+		}
+		int streak = pacing.beforeSend(conversationId, userId);
+		Message message = messages.save(Message.encrypted(conversationId, userId, frankingCommitment, clock.instant()));
+		e2ee.deliver(userId, sessionId, senderDevice, other, conversationId, message.getId(), envelopes);
+		conversation.markE2ee();
+		return MessageView.of(message, userId).withHint(pacing.hintAfterSend(streak));
+	}
+
+	/** The connection a reportable encrypted message belongs to, if the franking reveal matches what was sent. */
+	@Transactional(readOnly = true)
+	public Optional<String> verifyFranking(String userId, String conversationId, String messageId, String plaintext,
+			byte[] frankingKey) {
+		Conversation conversation = requireConversation(conversationId);
+		connections.requireMember(conversation.getConnectionId(), userId);
+		Message message = messages.findById(messageId)
+			.filter(m -> m.getConversationId().equals(conversationId) && m.isEncrypted()
+					&& !m.getSenderId().equals(userId))
+			.orElseThrow(() -> ApiException.notFound("Message"));
+		boolean matches = Franking.verify(message.getFrankingCommitment(), frankingKey, plaintext);
+		return matches ? Optional.of(conversation.getConnectionId()) : Optional.empty();
 	}
 
 	@Transactional(readOnly = true)
@@ -192,6 +239,7 @@ public class ChatService {
 			return;
 		}
 		List<Conversation> found = conversations.findByConnectionIdIn(connectionIds);
+		e2ee.deleteForConversations(found.stream().map(Conversation::getId).toList());
 		messages.deleteByConversationIds(found.stream().map(Conversation::getId).toList());
 		conversations.deleteAll(found);
 	}
@@ -209,16 +257,18 @@ public class ChatService {
 	 * {@code concern} is shown to the recipient only, on a message sent past the Empathy Mirror.
 	 */
 	public record MessageView(String id, boolean mine, String body, Instant sentAt, String pacingHint,
-			Concern concern) {
+			Concern concern, boolean encrypted) {
 
+		/** Encrypted messages have no body here: the devices hold it. */
 		static MessageView of(Message message, String viewerId) {
 			boolean mine = message.getSenderId().equals(viewerId);
-			return new MessageView(message.getId(), mine, message.getBody(), message.getCreatedAt(), null,
-					EmpathyMirror.concernFor(message.getToneFlag(), mine));
+			return new MessageView(message.getId(), mine, message.isEncrypted() ? null : message.getBody(),
+					message.getCreatedAt(), null, EmpathyMirror.concernFor(message.getToneFlag(), mine),
+					message.isEncrypted());
 		}
 
 		MessageView withHint(String hint) {
-			return new MessageView(id, mine, body, sentAt, hint, concern);
+			return new MessageView(id, mine, body, sentAt, hint, concern, encrypted);
 		}
 	}
 

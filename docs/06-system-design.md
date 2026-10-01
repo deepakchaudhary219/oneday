@@ -54,6 +54,22 @@ service (after commit) ── RealtimeService ──► memory: SimpMessagingTem
 - **Best effort by design.** A missed event is caught up on the next fetch; the database is the source of truth.
 - **Next step at scale:** dedicated socket nodes behind the same Redis fan-out, or a managed pub/sub.
 
+## 2b. End-to-end encrypted chat
+
+```
+sender device ── POST /conversations/{id}/encrypted ──► messages row (metadata + franking commitment)
+                 (one envelope per device)            └► e2ee_envelopes (one row per recipient device)
+                                                      └► socket ping "e2ee" (after commit, no content)
+recipient device ── GET inbox ──► envelopes ── POST ack ──► deleted (the server keeps no copy)
+```
+
+- **Queue semantics:** the envelope table is a per-device queue (insert on send, delete on ack, 30-day TTL). At scale it moves to a wide-column store keyed by `(user, device)`, or to per-device Kafka partitions, without API change.
+- **Consistency:**
+  - device lists are read on the primary, in the send transaction;
+  - a stale sender view fails fast with 409, so it is never silently partial;
+  - one-time prekeys are claimed with a conditional DELETE, so no prekey is handed out twice across replicas.
+- **What the server can still do:** pacing, rhythm, Weekly Meaningful Actives and abuse review of *reported* messages (franking). What it can't do is read anyone's chat.
+
 ## 3. Data flow: the transactional outbox
 
 ```

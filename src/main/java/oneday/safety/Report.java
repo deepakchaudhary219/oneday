@@ -54,6 +54,9 @@ public class Report {
 
 	private String details;
 
+	/** The plaintext of a reported encrypted message whose franking commitment verified. */
+	private String verifiedEvidence;
+
 	@Column(nullable = false)
 	private Instant createdAt;
 
@@ -103,6 +106,14 @@ public class Report {
 
 	public String getTargetType() {
 		return targetType;
+	}
+
+	public String getVerifiedEvidence() {
+		return verifiedEvidence;
+	}
+
+	void attachVerifiedEvidence(String evidence) {
+		this.verifiedEvidence = evidence;
 	}
 
 	public String getDetails() {

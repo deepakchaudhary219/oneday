@@ -154,8 +154,13 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `GET /plans/{id}/requests` · `POST /plans/{id}/requests/{handle}/approve` (**V**) · `/decline` · `GET/POST /plans/{id}/room` | | Opaque request handles (no user ids); a silent decline; the members-only Room |
 | `POST /connections/{id}/vouch` (**V**) · `DELETE` · `GET /vouches/mine` | | Trusted Vouch; strangers see a capped count only |
 | `POST/DELETE /moments/{id}/keep` · `GET /moments/trail` | | Private Memory Trail (area-level location only) |
-| `WS /ws` (STOMP) | | Real time, receive-only: CONNECT with `Authorization: Bearer`; subscribe to `/user/queue/events` only. Events: `message`, `room`, `notice`, `date-location`, `pulse-status`, `pulse-status-cleared`. |
+| `WS /ws` (STOMP) | | Real time, receive-only: CONNECT with `Authorization: Bearer`; subscribe to `/user/queue/events` only. Events: `message`, `room`, `notice`, `date-location`, `pulse-status`, `pulse-status-cleared`, `e2ee` (an envelope is waiting; no content on the socket). |
 | `GET /plus` · `POST /plus/subscribe` · `POST /plus/cancel` · `POST /webhooks/razorpay` (public, HMAC-signed) | | OneDay Plus (convenience only); the webhook is idempotent by event id |
+| `POST /e2ee/devices` · `GET /e2ee/devices` · `DELETE /e2ee/devices/{id}` · `PUT /e2ee/devices/{id}/signed-prekey` · `POST /e2ee/devices/{id}/prekeys` | | Key directory for this sign-in's device: identity key, signed prekey, up to 200 one-time prekeys (keys are base64). At most 5 linked devices. |
+| `GET /e2ee/connections/{connectionId}/bundles` (**V**) · `GET /e2ee/devices/{id}/bundles` | | Prekey bundles for the other person's devices (per connection, 60/h) or your own other devices. Each one-time prekey is handed out once. |
+| `POST /conversations/{id}/encrypted` (**V**) · `GET /e2ee/devices/{id}/inbox` · `POST /e2ee/devices/{id}/inbox/ack` | | Encrypted send: `senderDevice`, franking `commitment`, and one envelope per device (`toSelf`, `deviceId`, `PREKEY`/`MESSAGE`, `ciphertext` ≤ 12 KB). The socket pings `e2ee`; the device pulls its inbox and acks, and acked envelopes are deleted. Undelivered ones go after 30 days. |
+| `POST /conversations/{id}/messages/{messageId}/report` | | Franked report of an encrypted message: `plaintext` + `frankingKey` must match the commitment (422 `FRANKING_MISMATCH` otherwise) |
+| `GET /empathy/lexicon` | | The Empathy Mirror lexicon for on-device checks (ETag, 304 when unchanged) |
 | `PUT /pulse-status` · `GET /pulse-status/mine` · `DELETE /pulse-status` · `GET /pulse-status/friends` | | Pulse Status: mood, 1–3 emoji, note ≤ 60, optional Spotify track (stored as the track id, shown via the official embed). Friends-only, 24 h, 12 updates/hour. |
 | `GET /consents` · `POST /consents/{purpose}` · `DELETE /consents/{purpose}` · `GET /consents/history` | | DPDP consent per purpose (`LOCATION_DISCOVERY`, `DATING_PREFERENCES`, `ROOTS_AND_LANGUAGES`, `WELLBEING_SURVEY`), each with its notice and withdrawal effect. Withdrawal deletes the data in the same transaction; using it again gives 409 `CONSENT_WITHDRAWN` until it is granted again. |
 | `POST /attestation/challenges` · `POST /attestation/apple/keys` | *public*, per-IP limits | Single-use 5-minute challenges, and iOS App Attest key registration (Apple's attestation verified once per install). Protected requests then send `X-Device-Integrity: appattest.<keyId>.<challenge>.<assertion>` (iOS, assertion over `SHA256(challenge + "\|" + action)`) or `play.<challenge>.<token>` (Android, Play Integrity `requestHash` = the same hash, base64url). A token or assertion therefore works once, for one action. |
@@ -186,6 +191,14 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
   - Sessions end after 30 idle days, after 180 days in any case, and beyond 10 devices (the least recently used goes first).
 - **Gate:** `SecurityFilterChain` requires `SCOPE_verified` on every **V** route. Services *also* call `UserGuard.requireContactAllowed(userId)`, which re-reads account status and verification status. A token issued before a suspension or re-verification failure therefore cannot be used for contact actions.
 - **Signup abuse (blueprint §47.6):** per-IP rate limit on `/auth/register`, plus device attestation on signup, phone sign-in and location updates (Play Integrity on Android, App Attest on iOS; `off → monitor → enforce`). App Attest assertions are bound to a single-use challenge and to the action, and the key's counter must only increase, so a replayed or cloned assertion fails.
+- **End-to-end encrypted chat** (Friend Mode, Signal-style X3DH + double ratchet on the devices):
+  - The server is a key directory and a ciphertext relay. It never holds a private key or an unreported plaintext.
+  - Devices are bound to the sign-in session that registered them, so ending the session (sign-out, "sign out that phone", refresh-token theft) unlinks the device.
+  - A sender must cover exactly the current device set (409 `DEVICE_LIST_MISMATCH` otherwise), so a newly linked device can't silently miss messages.
+  - Once a conversation is encrypted it refuses plaintext (`E2EE_REQUIRED`), so there is no downgrade.
+  - **Message franking:** each message carries `HMAC-SHA256(k, plaintext)` with `k` inside the ciphertext. A recipient's report reveals the plaintext and `k`, and the server checks them against the commitment, so moderators see verified evidence (`verifiedEvidence`).
+  - The Empathy Mirror runs on the device with the same lexicon (`GET /empathy/lexicon`).
+  - Pacing, rhythm and Weekly Meaningful Actives use message metadata, which stays server-side.
 - **Passwords:** delegating encoder (bcrypt default). Sign-in attempts are limited per network (100/h) and per account (10/h). **Phone OTP** (M2) is the primary login method in India. Phone-only accounts have no password and cannot use password login.
 - **Error contract:** RFC 9457 `ProblemDetail` with a stable `code` property and the `requestId`. Unexpected errors return `INTERNAL_ERROR` without internals.
 
@@ -235,7 +248,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V27`)
+## 6. Data model (Flyway `V1`–`V28`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -272,6 +285,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `subscriptions` · `payment_webhook_events` (V23) | provider subscription id UQ, status, `current_end`, `cancel_at_cycle_end` · applied webhook ids | Kept on erasure with `user_id` replaced (tax law) |
 | `consent_records` (V24) | `user_id`, `purpose`, `action` (`GRANTED`/`WITHDRAWN`), `notice_version`, `source` (`APP_ACTION`/`SETTINGS`); index (`user_id`, `purpose`, `created_at`) | Append-only; the latest row is the current state. Pseudonymised on erasure: proof of consent stays with the fiduciary (DPDP s.6(10)). |
 | `messages.tone_flag` · `plan_messages.tone_flag` (V26) | Empathy Mirror tone of a message sent anyway, or NULL | Drives the recipient's "does this bother you?" |
+| `e2ee_devices` · `e2ee_one_time_prekeys` · `e2ee_envelopes` (V28); `messages.encrypted`, `messages.franking_commitment`, `conversations.e2ee`, `reports.verified_evidence` | PK(`user_id`, `device_id`) + `session_id` · PK(`user_id`, `device_id`, `key_id`) · inbox index (`recipient_user_id`, `recipient_device_id`, `created_at`) | Public keys and ciphertext only. Prekeys are claimed by conditional DELETE. Envelopes are deleted on ack or after 30 days. All of it goes on erasure. |
 | `attestation_challenges` · `app_attest_keys` (V27) | challenge PK + `expires_at` · `key_id` PK, `public_key`, `sign_count`, `environment` | Challenges are consumed with one conditional DELETE, so each is single-use across replicas. The counter advances with a conditional UPDATE. |
 | `pulse_statuses` (V25) | PK `user_id`, `id` UQ (new on every update), `mood`, `emoji`, `note`, `spotify_track_id`, `expires_at` (indexed) | One per person; reads filter on expiry and a sweeper deletes expired rows |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
@@ -311,6 +325,7 @@ PENDING ──reveal──► REVEALED  (Connection + Conversation created atomi
 | Evidence retention vs. erasure (POCSO; IT Rules 2021 Rule 3(1)(g), 180 days) | Erasure is deferred while an open P0 report exists or within 180 days of an enforcement action. The account is hidden and its identifiers released at once, with no tip-off, and it is erased automatically when the hold lifts. | M2 ✅ |
 | IT Rules 2026 SGI labelling | Live-capture-only Discovery Mode. Labelled lenses in Friend Mode. SGI declaration for any future upload path. | M1 (capture flag) / M2 (client attestation) |
 | POCSO mandatory reporting | Evidence-preservation hold on P0 reports, counsel-designed reporting SOP | Before public launch |
+| IT Rules 2021 Rule 4(2): "first originator" traceability for significant social media intermediaries (5M+ registered users in India) offering messaging | **Open, a counsel decision before that threshold.** E2EE chat cannot identify an originator from content. Franking gives verified evidence for *reported* messages and keeps sender and time metadata, but it is not traceability (the rule is under constitutional challenge). Options include a lawful-order process limited to metadata, or keeping Friend Mode below the SSMI threshold. | Before 5M users |
 | Data residency | Host in Indian cloud regions (e.g. Mumbai / Hyderabad) for Indian users | M2 infra |
 
 ---

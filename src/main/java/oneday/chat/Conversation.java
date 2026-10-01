@@ -25,6 +25,10 @@ public class Conversation {
 	@Column(nullable = false)
 	private Instant createdAt;
 
+	/** Set by the first encrypted message and never cleared: no downgrade to plaintext. */
+	@Column(nullable = false)
+	private boolean e2ee;
+
 	protected Conversation() {
 	}
 
@@ -45,6 +49,14 @@ public class Conversation {
 
 	public String getSeedContext() {
 		return seedContext;
+	}
+
+	public boolean isE2ee() {
+		return e2ee;
+	}
+
+	void markE2ee() {
+		this.e2ee = true;
 	}
 
 	public Instant getCreatedAt() {

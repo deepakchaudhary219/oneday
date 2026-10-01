@@ -267,7 +267,8 @@ public class StaffConsoleService {
 		boolean overdue = report.getStatus().isOpen() && clock.instant().isAfter(dueAt);
 		return new ReportItem(report.getId(), report.getCategory().name(), report.getPriority().name(),
 				report.getStatus().name(), report.getReportedId(), displayName(report.getReportedId()),
-				report.getReporterId(), report.getTargetType(), report.getDetails(), report.getCreatedAt(), dueAt,
+				report.getReporterId(), report.getTargetType(), report.getDetails(), report.getVerifiedEvidence(),
+				report.getCreatedAt(), dueAt,
 				overdue, report.getAssigneeId(), safety.reportsAgainst(report.getReportedId()),
 				report.getResolution() == null ? null : report.getResolution().name());
 	}
@@ -287,9 +288,14 @@ public class StaffConsoleService {
 			String accountStatus, String latestOutcome, Integer estimatedAge, Double confidence, Instant attemptedAt) {
 	}
 
-	/** {@code reportedDisplayName} is null when the reported account has since been erased. */
+	/**
+	 * {@code reportedDisplayName} is null when the reported account has since been erased.
+	 * {@code verifiedEvidence} is an encrypted message's plaintext whose franking commitment matched, so it is
+	 * exactly what the reported person sent; {@code details} is the reporter's own words.
+	 */
 	public record ReportItem(String id, String category, String priority, String status, String reportedUserId,
-			String reportedDisplayName, String reporterUserId, String targetType, String details, Instant createdAt,
+			String reportedDisplayName, String reporterUserId, String targetType, String details,
+			String verifiedEvidence, Instant createdAt,
 			Instant dueAt, boolean overdue, String assigneeId, long reportsAgainstUser, String resolution) {
 	}
 

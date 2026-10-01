@@ -86,10 +86,22 @@ public class SafetyService {
 	@Transactional
 	public ReportReceipt report(String userId, SafetyTarget target, ReportCategory category, String details,
 			boolean alsoBlock) {
+		return report(userId, target, category, details, null, alsoBlock);
+	}
+
+	/**
+	 * A report carrying {@code verifiedEvidence}: content the platform could check without reading it in transit
+	 * (an encrypted message whose franking commitment matched). Only callers that did that check pass it.
+	 */
+	@Transactional
+	public ReportReceipt report(String userId, SafetyTarget target, ReportCategory category, String details,
+			String verifiedEvidence, boolean alsoBlock) {
 		guard.requireActive(userId);
 		String other = resolve(userId, target);
-		Report report = reports.save(new Report(userId, other, category, target.type(),
-				details == null || details.isBlank() ? null : details.strip(), clock.instant()));
+		Report report = new Report(userId, other, category, target.type(),
+				details == null || details.isBlank() ? null : details.strip(), clock.instant());
+		report.attachVerifiedEvidence(verifiedEvidence);
+		reports.save(report);
 		metrics.reportFiled(report.getPriority());
 		if (alsoBlock) {
 			block(userId, target);

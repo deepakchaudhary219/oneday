@@ -31,6 +31,13 @@ public class Message {
 	/** The Empathy Mirror tone of a message sent anyway after the reflection, or null. */
 	private String toneFlag;
 
+	/** End-to-end encrypted: the body is empty here and lives only on the devices. */
+	@Column(nullable = false)
+	private boolean encrypted;
+
+	/** HMAC-SHA256(franking key, plaintext), committed by the sender; verifies a recipient's report. */
+	private byte[] frankingCommitment;
+
 	protected Message() {
 	}
 
@@ -60,6 +67,21 @@ public class Message {
 
 	public Instant getCreatedAt() {
 		return createdAt;
+	}
+
+	static Message encrypted(String conversationId, String senderId, byte[] frankingCommitment, Instant now) {
+		Message message = new Message(conversationId, senderId, "", now);
+		message.encrypted = true;
+		message.frankingCommitment = frankingCommitment;
+		return message;
+	}
+
+	public boolean isEncrypted() {
+		return encrypted;
+	}
+
+	byte[] getFrankingCommitment() {
+		return frankingCommitment;
 	}
 
 	public String getToneFlag() {
