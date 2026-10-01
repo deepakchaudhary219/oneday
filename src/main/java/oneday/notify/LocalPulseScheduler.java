@@ -88,7 +88,8 @@ public class LocalPulseScheduler {
 			return false;
 		}
 		boolean worthSaying = !"0".equals(view.pendingSignals()) || view.newConnectionsThisWeek() > 0
-				|| !view.nearbyActivity().isEmpty();
+				|| !view.nearbyActivity().isEmpty() || !"0".equals(view.relayAnswers())
+				|| (!view.promptAnsweredByYou() && !"0".equals(view.promptAnsweredNearby()));
 		if (!worthSaying) {
 			return false;
 		}

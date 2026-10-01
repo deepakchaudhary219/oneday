@@ -27,12 +27,13 @@ class DateEventHandlers {
 				return;
 			}
 			String name = profiles.find(e.userId()).map(Profile::firstName).orElse("Your friend");
+			String emergency = profiles.find(e.userId()).map(Profile::emergencyNumber).orElse(settings.emergencyNumber());
 			String what = EscalationReason.MISSED_CHECK_IN.name().equals(e.reason()) ? "didn't answer a check-in"
 					: "asked for help";
 			sms.textOrThrow(who.getContactPhone(), "OneDay safety alert: " + name + " " + what
 					+ " during their meet-up at " + plan.getPlaceName()
 					+ ". Try calling them now; the link we sent you earlier shows where they are if they're sharing."
-					+ " If you can't reach them and are worried, call " + settings.emergencyNumber() + ".");
+					+ " If you can't reach them and are worried, call " + emergency + ".");
 		});
 	}
 

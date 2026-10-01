@@ -43,6 +43,12 @@ public class MomentController {
 		return moments.view(jwt.getSubject(), momentId);
 	}
 
+	/** The Story Relay this moment belongs to (or started). */
+	@GetMapping("/{momentId}/relay")
+	MomentService.RelayView relay(@AuthenticationPrincipal Jwt jwt, @PathVariable String momentId) {
+		return moments.relay(jwt.getSubject(), momentId);
+	}
+
 	@DeleteMapping("/{momentId}")
 	ResponseEntity<Void> delete(@AuthenticationPrincipal Jwt jwt, @PathVariable String momentId) {
 		moments.delete(jwt.getSubject(), momentId);

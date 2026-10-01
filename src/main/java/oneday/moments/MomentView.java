@@ -18,7 +18,10 @@ public record MomentView(
 		String caption,
 		String mediaUrl,
 		ShareScope shareScope,
-		Instant postedAt) {
+		Instant postedAt,
+		boolean answersPrompt,
+		String relayId,
+		int relayPosition) {
 
 	public enum Layer {
 		AMBIENT, FULL
@@ -26,11 +29,13 @@ public record MomentView(
 
 	static MomentView full(Moment m, String firstName, String previewUrl, String mediaUrl) {
 		return new MomentView(m.getId(), Layer.FULL, firstName, m.getKind(), m.getActivityTag(), m.isCapturedLive(),
-				previewUrl, m.getCaption(), mediaUrl, m.getShareScope(), m.getCreatedAt());
+				previewUrl, m.getCaption(), mediaUrl, m.getShareScope(), m.getCreatedAt(), m.getPromptKey() != null,
+				m.getRelayRootId(), m.getRelayDepth());
 	}
 
 	static MomentView ambient(Moment m, String firstName, String previewUrl) {
 		return new MomentView(m.getId(), Layer.AMBIENT, firstName, m.getKind(), m.getActivityTag(),
-				m.isCapturedLive(), previewUrl, null, null, null, null);
+				m.isCapturedLive(), previewUrl, null, null, null, null, m.getPromptKey() != null, m.getRelayRootId(),
+				m.getRelayDepth());
 	}
 }

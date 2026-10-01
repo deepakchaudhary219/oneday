@@ -21,6 +21,8 @@ public record ProfileView(
 		int discoveryRadiusKm,
 		int pulseHour,
 		String timeZone,
+		String country,
+		String emergencyNumber,
 		boolean safeZoneSet,
 		VerificationStatus verificationStatus) {
 
@@ -28,6 +30,7 @@ public record ProfileView(
 		return new ProfileView(p.getDisplayName(), p.getBio(), p.getActivities(), p.getValues(), p.getLanguages(),
 				p.getHomeRegion(), p.getGender(), p.getInterestedIn(), p.getAccountPrivacy(), p.isDatingLens(),
 				p.isDiscretionMode(), p.getDiscoveryRadiusKm(), p.getPulseHour(), p.getTimeZone(),
+				p.getCountryCode(), p.emergencyNumber(),
 				p.getSafeZonePrefix() != null,
 				user.getVerificationStatus());
 	}

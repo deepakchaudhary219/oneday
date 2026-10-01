@@ -72,6 +72,10 @@ public class Profile {
 	@Column(nullable = false)
 	private String timeZone;
 
+	/** ISO 3166-1 alpha-2; picks the emergency number shown on safety surfaces. */
+	@Column(nullable = false)
+	private String countryCode;
+
 	/** Geohash-5 prefix; while inside it the user appears only as "nearby area" (blueprint v2 §6.3). */
 	private String safeZonePrefix;
 
@@ -88,6 +92,7 @@ public class Profile {
 		this.discoveryRadiusKm = discoveryRadiusKm;
 		this.pulseHour = 19;
 		this.timeZone = "Asia/Kolkata";
+		this.countryCode = "IN";
 		this.updatedAt = now;
 	}
 
@@ -221,6 +226,18 @@ public class Profile {
 
 	public void setTimeZone(String timeZone) {
 		this.timeZone = timeZone;
+	}
+
+	public String getCountryCode() {
+		return countryCode;
+	}
+
+	public void setCountryCode(String countryCode) {
+		this.countryCode = countryCode;
+	}
+
+	public String emergencyNumber() {
+		return EmergencyNumbers.forCountry(countryCode);
 	}
 
 	public String getSafeZonePrefix() {

@@ -21,5 +21,6 @@ public record UpdateProfileRequest(
 		Boolean discretionMode,
 		Integer discoveryRadiusKm,
 		@Min(0) @Max(23) Integer pulseHour,
-		@Size(max = 40) String timeZone) {
+		@Size(max = 40) String timeZone,
+		@Size(min = 2, max = 2) String country) {
 }
