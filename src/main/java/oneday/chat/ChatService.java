@@ -106,6 +106,26 @@ public class ChatService {
 		return new BalanceView(BalanceView.State.BALANCED, "You've both been equally active this week.");
 	}
 
+	/**
+	 * How many of the user's conversations "went somewhere" in [from, to): both people wrote, and at least
+	 * {@code minMessages} messages were exchanged. A count for the owner's private ledger only.
+	 */
+	@Transactional(readOnly = true)
+	public int meaningfulConversations(String userId, Instant from, Instant to, int minMessages) {
+		List<String> connectionIds = connections.all(userId).stream().map(Connection::getId).toList();
+		if (connectionIds.isEmpty()) {
+			return 0;
+		}
+		List<String> conversationIds = conversations.findByConnectionIdIn(connectionIds)
+			.stream()
+			.map(Conversation::getId)
+			.toList();
+		if (conversationIds.isEmpty()) {
+			return 0;
+		}
+		return messages.findActiveConversations(conversationIds, from, to, minMessages).size();
+	}
+
 	@Transactional(readOnly = true)
 	public List<Message> sentBy(String userId) {
 		return messages.findBySenderIdOrderByCreatedAtAsc(userId);

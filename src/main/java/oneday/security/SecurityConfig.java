@@ -7,7 +7,9 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
 
 import oneday.config.OneDayProperties;
+import oneday.media.MediaProperties;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.http.HttpMethod;
@@ -26,12 +28,14 @@ import org.springframework.security.oauth2.jwt.JwtTimestampValidator;
 import org.springframework.security.oauth2.jwt.NimbusJwtDecoder;
 import org.springframework.security.oauth2.jwt.NimbusJwtEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.util.matcher.RequestMatcher;
 
 /**
  * Stateless JWT security. Contact-reaching routes (posting publicly, signalling, revealing, messaging,
  * sparking) require the {@code verified} scope: the progressive-verification gate from blueprint §41.4,
  * enforced in the filter chain so no controller can forget it. Services re-check against the database
- * (see {@code UserGuard}) so a stale token cannot outlive a revoked verification.
+ * (see {@code UserGuard}) so a stale token cannot outlive a revoked verification, and every token must
+ * belong to a live sign-in session (see {@link SessionValidator}).
  */
 @Configuration
 @EnableWebSecurity
@@ -42,17 +46,42 @@ public class SecurityConfig {
 	static final String VERIFIED = "SCOPE_verified";
 
 	@Bean
-	SecurityFilterChain apiSecurity(HttpSecurity http) throws Exception {
+	SecurityFilterChain apiSecurity(HttpSecurity http, MediaProperties media,
+			@Value("${management.server.port:}") String managementPort) throws Exception {
+		// The dev object store authorises by URL signature, exactly like pre-signed S3; it only exists in dev.
+		String[] devMedia = "dev".equals(media.provider()) ? new String[] { "/dev-media/**" } : new String[0];
+		// Prometheus scrapes without a token only on a separate management port, which is kept off the public
+		// network; on the public port the metrics need an admin token.
+		RequestMatcher scrapeOnManagementPort = request -> !managementPort.isBlank()
+				&& managementPort.equals(String.valueOf(request.getLocalPort()))
+				&& "/actuator/prometheus".equals(request.getRequestURI());
 		http.csrf(csrf -> csrf.disable())
 			.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(auth -> auth
-				.requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login").permitAll()
+				.requestMatchers(devMedia)
+				.permitAll()
+				.requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login", "/auth/refresh",
+						"/auth/otp/request", "/auth/otp/verify")
+				.permitAll()
 				.requestMatchers("/actuator/health/**", "/actuator/info", "/v3/api-docs/**", "/swagger-ui/**",
 						"/swagger-ui.html", "/error")
 				.permitAll()
-				.requestMatchers(HttpMethod.POST, "/moments", "/signals", "/signals/*/reveal",
-						"/conversations/*/messages", "/connections/*/spark")
+				.requestMatchers(HttpMethod.GET, "/grievances/officer")
+				.permitAll()
+				// A trusted contact has no account: the unguessable link is the credential (Date Mode).
+				.requestMatchers(HttpMethod.GET, "/date-share/*")
+				.permitAll()
+				.requestMatchers(scrapeOnManagementPort)
+				.permitAll()
+				.requestMatchers("/actuator/prometheus")
+				.hasAuthority("SCOPE_admin")
+				.requestMatchers(HttpMethod.POST, "/moments", "/media/uploads", "/signals", "/signals/*/reveal",
+						"/conversations/*/messages", "/connections/*/spark",
+						"/connections/*/couple", "/dates", "/dates/*/accept")
 				.hasAuthority(VERIFIED)
+				.requestMatchers("/staff/members/**", "/staff/audit", "/staff/accounts/**", "/staff/events/**")
+				.hasAuthority("SCOPE_admin")
+				.requestMatchers("/staff/**").hasAuthority("SCOPE_moderator")
 				.anyRequest().authenticated())
 			.oauth2ResourceServer(oauth -> oauth.jwt(Customizer.withDefaults()));
 		return http.build();
@@ -70,13 +99,15 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	JwtDecoder jwtDecoder(SecretKey jwtSigningKey, Clock clock) {
+	JwtDecoder jwtDecoder(SecretKey jwtSigningKey, Clock clock, SessionRepository sessions) {
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSigningKey)
 			.macAlgorithm(MacAlgorithm.HS256)
 			.build();
 		JwtTimestampValidator timestamps = new JwtTimestampValidator();
 		timestamps.setClock(clock);
-		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestamps, new JwtIssuerValidator(ISSUER)));
+		// Cheap checks first: the session lookup only runs for a well-formed, unexpired token of ours.
+		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestamps, new JwtIssuerValidator(ISSUER),
+				new SessionValidator(sessions, clock)));
 		return decoder;
 	}
 

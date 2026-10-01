@@ -26,7 +26,7 @@ public final class DiscoveryViews {
 			String distance,
 			Direction direction,
 			boolean liveCaptured,
-			String previewRef,
+			String previewUrl,
 			String sharedHomeRegion,
 			Set<String> sharedLanguages,
 			String whyYouSeeThis) {

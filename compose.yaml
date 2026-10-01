@@ -1,0 +1,109 @@
+# Production-shaped local stack: the API image with MySQL, Redis (shared limits across replicas) and an
+# S3-compatible store (SeaweedFS) for media. SMS, liveness and push use the 'dev' providers so the whole
+# loop works offline; swap them for real providers in a deployment.
+#
+#   scripts/new-env.sh        # or on Windows: powershell -ExecutionPolicy Bypass -File scripts\new-env.ps1
+#   docker compose up --build -d
+#   docker compose run --rm smoke
+#
+# The API listens on http://localhost:8080; signed media URLs point at http://localhost:8333.
+name: oneday
+
+services:
+  api:
+    build: .
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      media:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      SPRING_PROFILES_ACTIVE: redis
+      ONEDAY_DB_URL: jdbc:mysql://mysql:3306/oneday
+      ONEDAY_DB_USER: oneday
+      ONEDAY_DB_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      ONEDAY_REDIS_HOST: redis
+      ONEDAY_REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+      ONEDAY_JWT_SECRET: ${ONEDAY_JWT_SECRET:?set ONEDAY_JWT_SECRET in .env}
+      ONEDAY_LOCATION_SECRET: ${ONEDAY_LOCATION_SECRET:?set ONEDAY_LOCATION_SECRET in .env}
+      ONEDAY_MEDIA_PROVIDER: s3
+      ONEDAY_MEDIA_BUCKET: oneday-media
+      ONEDAY_MEDIA_ENDPOINT: http://media:8333
+      ONEDAY_MEDIA_PUBLIC_ENDPOINT: http://localhost:8333
+      ONEDAY_MEDIA_ACCESS_KEY: ${MEDIA_ACCESS_KEY:?set MEDIA_ACCESS_KEY in .env}
+      ONEDAY_MEDIA_SECRET_KEY: ${MEDIA_SECRET_KEY:?set MEDIA_SECRET_KEY in .env}
+      ONEDAY_SMS_PROVIDER: dev
+      ONEDAY_VERIFICATION_PROVIDER: dev
+      ONEDAY_PUSH_PROVIDER: dev
+      ONEDAY_BOOTSTRAP_ADMIN_IDS: ${ONEDAY_BOOTSTRAP_ADMIN_IDS:-}
+
+  mysql:
+    image: mysql:8.4
+    environment:
+      MYSQL_DATABASE: oneday
+      MYSQL_USER: oneday
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?set MYSQL_PASSWORD in .env}
+      MYSQL_RANDOM_ROOT_PASSWORD: "yes"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u oneday -p\"$$MYSQL_PASSWORD\" --silent"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+
+  redis:
+    image: redis:7.4-alpine
+    command: ["redis-server", "--requirepass", "${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}", "--appendonly", "no"]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" --no-auth-warning ping | grep -q PONG"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:?set REDIS_PASSWORD in .env}
+
+  media:
+    # Pinned by digest (4.48): the store's S3 behaviour is part of what the smoke test checks.
+    image: chrislusf/seaweedfs:4.48@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    command: ["mini", "-dir=/data", "-bucket=oneday-media", "-s3.config=/etc/seaweedfs/s3.json", "-admin.ui=false"]
+    configs:
+      - source: s3-identities
+        target: /etc/seaweedfs/s3.json
+    ports:
+      - "8333:8333"
+    volumes:
+      - media-data:/data
+
+  # End-to-end check that needs nothing on the host but Docker (Windows included):
+  #   docker compose run --rm smoke
+  smoke:
+    profiles: ["smoke"]
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM ubuntu:24.04
+        RUN apt-get update && apt-get install -y --no-install-recommends curl jq socat \
+          && rm -rf /var/lib/apt/lists/*
+        COPY scripts/smoke-test.sh /smoke-test.sh
+        RUN sed -i 's/\r$$//' /smoke-test.sh && chmod +x /smoke-test.sh
+    depends_on:
+      api:
+        condition: service_started
+    # Signed media URLs name the store the way phones reach it (localhost:8333), so forward that port to it.
+    entrypoint: ["bash", "-c", "socat TCP-LISTEN:8333,fork,reuseaddr TCP:media:8333 & exec /smoke-test.sh http://api:8080"]
+
+configs:
+  s3-identities:
+    content: |
+      {"identities": [{"name": "oneday",
+        "credentials": [{"accessKey": "${MEDIA_ACCESS_KEY}", "secretKey": "${MEDIA_SECRET_KEY}"}],
+        "actions": ["Read", "Write", "List", "Tagging"]}]}
+
+volumes:
+  mysql-data:
+  media-data:

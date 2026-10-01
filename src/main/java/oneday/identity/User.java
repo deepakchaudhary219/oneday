@@ -19,10 +19,13 @@ public class User {
 	@Id
 	private String id;
 
-	@Column(nullable = false, unique = true)
+	/** Email or phone (E.164) identifies the account; phone-only accounts have no password. */
+	@Column(unique = true)
 	private String email;
 
-	@Column(nullable = false)
+	@Column(unique = true)
+	private String phone;
+
 	private String passwordHash;
 
 	@Column(nullable = false)
@@ -48,12 +51,20 @@ public class User {
 	@Column(nullable = false)
 	private Instant createdAt;
 
+	/** Set when erasure was requested but deferred by a safety hold. */
+	private Instant erasureRequestedAt;
+
+	/** The released email/phone, kept only while evidence is held (never used for login or lookup). */
+	private String heldIdentifiers;
+
 	protected User() {
 	}
 
-	public User(String email, String passwordHash, LocalDate dateOfBirth, String consentVersion, Instant now) {
+	private User(String email, String phone, String passwordHash, LocalDate dateOfBirth, String consentVersion,
+			Instant now) {
 		this.id = Ids.newId();
 		this.email = email;
+		this.phone = phone;
 		this.passwordHash = passwordHash;
 		this.dateOfBirth = dateOfBirth;
 		this.accountStatus = AccountStatus.ACTIVE;
@@ -63,6 +74,15 @@ public class User {
 		this.createdAt = now;
 	}
 
+	public static User withEmail(String email, String passwordHash, LocalDate dateOfBirth, String consentVersion,
+			Instant now) {
+		return new User(email, null, passwordHash, dateOfBirth, consentVersion, now);
+	}
+
+	public static User withPhone(String phone, LocalDate dateOfBirth, String consentVersion, Instant now) {
+		return new User(null, phone, null, dateOfBirth, consentVersion, now);
+	}
+
 	public void markVerified(Instant now) {
 		this.verificationStatus = VerificationStatus.VERIFIED;
 		this.verifiedAt = now;
@@ -70,6 +90,47 @@ public class User {
 
 	public void markManualReview() {
 		this.verificationStatus = VerificationStatus.MANUAL_REVIEW;
+	}
+
+	public void markRejected() {
+		this.verificationStatus = VerificationStatus.REJECTED;
+	}
+
+	/** Lets the user take the liveness check again (e.g. a moderator asked for a clearer attempt). */
+	public void resetVerification() {
+		this.verificationStatus = VerificationStatus.UNVERIFIED;
+	}
+
+	/** No-op for an account awaiting erasure: it must keep looking deleted (the enforcement is on record). */
+	public void suspend() {
+		if (!isDeactivated()) {
+			this.accountStatus = AccountStatus.SUSPENDED;
+		}
+	}
+
+	public void reinstate() {
+		this.accountStatus = AccountStatus.ACTIVE;
+	}
+
+	/**
+	 * Deferred erasure: the account disappears now and its email/phone are released (so the person can
+	 * even sign up again), while the records stay for the safety review.
+	 */
+	public void deactivateForErasure(Instant now) {
+		this.accountStatus = AccountStatus.DEACTIVATED;
+		this.erasureRequestedAt = now;
+		this.heldIdentifiers = "email=" + (email == null ? "" : email) + ";phone=" + (phone == null ? "" : phone);
+		this.email = null;
+		this.phone = null;
+		this.passwordHash = null;
+	}
+
+	public boolean isDeactivated() {
+		return accountStatus == AccountStatus.DEACTIVATED;
+	}
+
+	public Instant getErasureRequestedAt() {
+		return erasureRequestedAt;
 	}
 
 	public boolean isVerified() {
@@ -86,6 +147,10 @@ public class User {
 
 	public String getEmail() {
 		return email;
+	}
+
+	public String getPhone() {
+		return phone;
 	}
 
 	public String getPasswordHash() {

@@ -21,6 +21,16 @@ public interface MessageRepository extends JpaRepository<Message, String> {
 
 	List<Message> findBySenderIdOrderByCreatedAtAsc(String senderId);
 
+	/**
+	 * Conversations among {@code conversationIds} where, in the period, both people wrote and at least
+	 * {@code minTotal} messages were exchanged: "a conversation that went somewhere".
+	 */
+	@Query("select m.conversationId from Message m where m.conversationId in :conversationIds "
+			+ "and m.createdAt >= :from and m.createdAt < :to group by m.conversationId "
+			+ "having count(distinct m.senderId) = 2 and count(m) >= :minTotal")
+	List<String> findActiveConversations(@Param("conversationIds") Collection<String> conversationIds,
+			@Param("from") Instant from, @Param("to") Instant to, @Param("minTotal") long minTotal);
+
 	@Modifying
 	@Query("delete from Message m where m.conversationId in :conversationIds")
 	void deleteByConversationIds(@Param("conversationIds") Collection<String> conversationIds);

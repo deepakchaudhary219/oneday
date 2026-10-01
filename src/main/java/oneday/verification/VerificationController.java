@@ -1,5 +1,6 @@
 package oneday.verification;
 
+import oneday.security.TokenService;
 import oneday.verification.VerificationService.VerificationResponse;
 
 import jakarta.validation.Valid;
@@ -26,7 +27,8 @@ public class VerificationController {
 	/** Returns a fresh token; it carries the {@code verified} scope once the check clears. */
 	@PostMapping("/liveness")
 	VerificationResponse liveness(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody LivenessRequest request) {
-		return verification.submitLiveness(jwt.getSubject(), request.sessionToken());
+		return verification.submitLiveness(jwt.getSubject(), jwt.getClaimAsString(TokenService.SESSION_CLAIM),
+				request.sessionToken());
 	}
 
 	record LivenessRequest(@NotBlank @Size(max = 512) String sessionToken) {

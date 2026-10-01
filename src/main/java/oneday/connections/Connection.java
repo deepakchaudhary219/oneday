@@ -46,6 +46,14 @@ public class Connection {
 	@Column(name = "spark_b", nullable = false)
 	private boolean sparkB;
 
+	@Column(name = "couple_a", nullable = false)
+	private boolean coupleA;
+
+	@Column(name = "couple_b", nullable = false)
+	private boolean coupleB;
+
+	private Instant coupleSince;
+
 	@Column(nullable = false)
 	private Instant createdAt;
 
@@ -90,6 +98,34 @@ public class Connection {
 		else {
 			sparkB = value;
 		}
+		if (!value) {
+			setCouple(userId, false, null);
+		}
+	}
+
+	/** Couple Mode is on only while both sides confirm it, and only on top of a Mutual Spark. */
+	public boolean isCouple() {
+		return isActive() && coupleA && coupleB;
+	}
+
+	public boolean hasConfirmedCouple(String userId) {
+		return userA.equals(userId) ? coupleA : coupleB;
+	}
+
+	void setCouple(String userId, boolean value, Instant now) {
+		boolean was = coupleA && coupleB;
+		if (userA.equals(userId)) {
+			coupleA = value;
+		}
+		else {
+			coupleB = value;
+		}
+		if (!was && coupleA && coupleB) {
+			coupleSince = now;
+		}
+		else if (!(coupleA && coupleB)) {
+			coupleSince = null;
+		}
 	}
 
 	void end(Instant now) {
@@ -97,6 +133,9 @@ public class Connection {
 		endedAt = now;
 		sparkA = false;
 		sparkB = false;
+		coupleA = false;
+		coupleB = false;
+		coupleSince = null;
 	}
 
 	void reactivate(ConnectionOrigin origin, Instant now) {
@@ -128,6 +167,10 @@ public class Connection {
 
 	public Instant getCreatedAt() {
 		return createdAt;
+	}
+
+	public Instant getCoupleSince() {
+		return coupleSince;
 	}
 
 	public Instant getEndedAt() {

@@ -1,11 +1,17 @@
 package oneday.safety;
 
 import java.time.Clock;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.stream.Stream;
 
 import oneday.common.ApiException;
+import oneday.common.ProductMetrics;
 import oneday.connections.ConnectionService;
+import oneday.events.DomainEvent;
+import oneday.events.EventPublisher;
 import oneday.identity.UserGuard;
 import oneday.moments.Moment;
 import oneday.moments.MomentService;
@@ -35,8 +41,17 @@ public class SafetyService {
 
 	private final Clock clock;
 
+	private final ProductMetrics metrics;
+
+	private final EventPublisher events;
+
+	private final SafetyProperties safetyProperties;
+
 	public SafetyService(BlockRepository blocks, ReportRepository reports, MomentService moments,
-			SignalService signals, ConnectionService connections, UserGuard guard, Clock clock) {
+			SignalService signals, ConnectionService connections, UserGuard guard, Clock clock,
+			SafetyProperties safetyProperties, ProductMetrics metrics, EventPublisher events) {
+		this.metrics = metrics;
+		this.events = events;
 		this.blocks = blocks;
 		this.reports = reports;
 		this.moments = moments;
@@ -44,6 +59,7 @@ public class SafetyService {
 		this.connections = connections;
 		this.guard = guard;
 		this.clock = clock;
+		this.safetyProperties = safetyProperties;
 	}
 
 	/**
@@ -56,6 +72,7 @@ public class SafetyService {
 		String other = resolve(userId, target);
 		if (!blocks.existsByBlockerIdAndBlockedId(userId, other)) {
 			blocks.save(new Block(userId, other, clock.instant()));
+			events.publish(new DomainEvent.UserBlocked(userId, other));
 		}
 		connections.endBetween(userId, other);
 		signals.archiveBetween(userId, other);
@@ -68,6 +85,7 @@ public class SafetyService {
 		String other = resolve(userId, target);
 		Report report = reports.save(new Report(userId, other, category, target.type(),
 				details == null || details.isBlank() ? null : details.strip(), clock.instant()));
+		metrics.reportFiled(report.getPriority());
 		if (alsoBlock) {
 			block(userId, target);
 		}
@@ -83,6 +101,63 @@ public class SafetyService {
 	@Transactional(readOnly = true)
 	public List<Block> blocksMadeBy(String userId) {
 		return blocks.findByBlockerId(userId);
+	}
+
+	// ---- Trust & Safety queue (staff only; callers enforce the staff role) ----------------------------
+
+	/** Open work, most urgent first: priority, then oldest. */
+	@Transactional(readOnly = true)
+	public List<Report> openQueue() {
+		return reports.findByStatusIn(List.of(Report.Status.OPEN, Report.Status.IN_REVIEW))
+			.stream()
+			.sorted(Comparator.comparing(Report::getPriority).thenComparing(Report::getCreatedAt))
+			.toList();
+	}
+
+	@Transactional(readOnly = true)
+	public long reportsAgainst(String userId) {
+		return reports.countByReportedId(userId);
+	}
+
+	@Transactional
+	public Report claim(String reportId, String staffUserId) {
+		Report report = requireOpen(reportId);
+		report.claim(staffUserId);
+		return report;
+	}
+
+	@Transactional
+	public Report resolve(String reportId, Report.Resolution resolution, String note, String staffUserId) {
+		Report report = requireOpen(reportId);
+		report.resolve(resolution, note, staffUserId, clock.instant());
+		return report;
+	}
+
+	private Report requireOpen(String reportId) {
+		Report report = reports.findById(reportId).orElseThrow(() -> ApiException.notFound("Report"));
+		if (!report.getStatus().isOpen()) {
+			throw ApiException.conflict("REPORT_CLOSED", "This report has already been resolved");
+		}
+		return report;
+	}
+
+	/**
+	 * Why this account's records must be kept even if its holder asks for erasure, or empty if they need
+	 * not be: an open P0 report (possible minor, intimate imagery, threats), or an enforcement action within
+	 * the evidence-retention period.
+	 */
+	@Transactional(readOnly = true)
+	public Optional<String> holdReason(String userId) {
+		if (reports.existsByReportedIdAndPriorityAndStatusIn(userId, ReportCategory.Priority.P0,
+				List.of(Report.Status.OPEN, Report.Status.IN_REVIEW))) {
+			return Optional.of("Open P0 safety report");
+		}
+		Instant since = clock.instant().minus(safetyProperties.evidenceRetention());
+		return reports
+			.findFirstByReportedIdAndResolutionAndResolvedAtAfterOrderByResolvedAtDesc(userId,
+					Report.Resolution.SUSPENDED, since)
+			.map(r -> "Enforcement evidence retained until "
+					+ r.getResolvedAt().plus(safetyProperties.evidenceRetention()));
 	}
 
 	/** Erasure: remove blocks involving the user; keep reports but detach the reporter's identity. */

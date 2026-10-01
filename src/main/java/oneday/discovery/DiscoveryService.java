@@ -93,6 +93,10 @@ public class DiscoveryService {
 		if (page < 0 || page >= settings.maxPagesPerSession()) {
 			return caughtUp(scope, page);
 		}
+		if (!connections.inCouple(List.of(viewerId)).isEmpty()) {
+			return new Constellation(scope, page, List.of(), true,
+					"Couple Mode is on, so Discovery is paused. Switch it off any time in your connection.");
+		}
 		Profile viewer = profiles.require(viewerId);
 		if (scope == DiscoveryScope.ROOTS && viewer.getHomeRegion() == null) {
 			throw ApiException.conflict("HOME_REGION_REQUIRED", "Add your home region to meet people from home");
@@ -118,7 +122,8 @@ public class DiscoveryService {
 				latestByOwner.putIfAbsent(m.getOwnerId(), m);
 			}
 		}
-		Set<String> reachable = guard.reachableAmong(latestByOwner.keySet());
+		Set<String> reachable = new HashSet<>(guard.reachableAmong(latestByOwner.keySet()));
+		reachable.removeAll(connections.inCouple(reachable));
 		Map<String, GeoCell> ownerCells = locations.currentCells(reachable);
 
 		List<Candidate> candidates = new ArrayList<>();
@@ -143,7 +148,7 @@ public class DiscoveryService {
 		List<ConstellationNode> nodes = candidates.stream()
 			.skip(from)
 			.limit(settings.batchSize())
-			.map(DiscoveryService::toNode)
+			.map(this::toNode)
 			.toList();
 		boolean caughtUp = from + settings.batchSize() >= candidates.size() || page + 1 >= settings.maxPagesPerSession();
 		return new Constellation(scope, page, nodes, caughtUp, caughtUp ? caughtUpMessage() : null);
@@ -193,12 +198,12 @@ public class DiscoveryService {
 		return activity == null || activity.equals(moment.getActivityTag()) || owner.getActivities().contains(activity);
 	}
 
-	private static ConstellationNode toNode(Candidate c) {
+	private ConstellationNode toNode(Candidate c) {
 		Moment m = c.moment();
 		String activity = m.getActivityTag() != null ? m.getActivityTag()
 				: c.owner().getActivities().stream().findFirst().orElse(null);
 		return new ConstellationNode(m.getId(), c.owner().firstName(), m.getKind(), activity, c.placement().band(),
-				c.placement().band().label(), c.placement().direction(), m.isCapturedLive(), m.previewRef(),
+				c.placement().band().label(), c.placement().direction(), m.isCapturedLive(), moments.previewUrl(m),
 				c.affinity().sharedHomeRegion(), c.affinity().sharedLanguages(),
 				c.affinity().explanation(m.getActivityTag()));
 	}

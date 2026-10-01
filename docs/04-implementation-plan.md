@@ -36,14 +36,17 @@
 The scope and status are listed in §6 below.
 - **Exit:** the full core loop passes end-to-end tests. The verification gate is enforced. The location-privacy unit tests pass.
 
-### M2 · Platform hardening (≈ 4–6 weeks)
-- Redis for rate limits, probe budgets and sessions. Horizontal replicas.
-- Media pipeline: pre-signed S3 upload, transcoding worker, Layer-0 low-fi preview rendition, CDN.
-- Liveness vendor adapter (replaces `DevLivenessVerifier`). Manual-review console for `MANUAL_REVIEW`.
-- Phone OTP login. Device attestation (Play Integrity / App Attest) on signup and location updates.
-- Push delivery for the **Local Pulse** at the user's chosen hour, with Discretion Mode copy.
-- Observability (OpenTelemetry), audit log, breach runbook, grievance flow, report-handling console with SLA timers.
-- CI: GitHub Actions running tests against MySQL (Testcontainers). Deploy to an Indian cloud region.
+### M2 · Platform hardening (≈ 4–6 weeks) 🟡 *in progress; delivered items are listed in §7*
+- ✅ Redis for rate limits and probe budgets, so horizontal replicas share limits.
+- ✅ Media: pre-signed S3/MinIO upload with ownership checks and short-lived view URLs. ✅ Processing worker that strips metadata (photos re-encoded; videos via ffmpeg) and writes the Layer-0 preview. ⏳ CDN in front of the bucket.
+- ✅ Manual-review console for `MANUAL_REVIEW`. ⏳ Liveness vendor adapter (replaces `DevLivenessVerifier`).
+- ✅ Phone OTP login (SMS port). ⏳ DLT-registered SMS adapter. ⏳ Device attestation (Play Integrity / App Attest) on signup and location updates.
+- ✅ Push delivery for the **Local Pulse** at the user's chosen hour and time zone, with Discretion Mode copy, plus in-app safety notices. ⏳ FCM/APNs adapter.
+- ✅ Deferred erasure under a safety hold (open P0 report, or enforcement within the 180-day IT Rules retention period).
+- ✅ Staff audit log and report-handling console with SLA timers. ✅ Grievance redressal (IT Rules 3(2), DPDP s.13), including appeals from suspended accounts. ⏳ Breach runbook.
+- ✅ Sessions: 15-minute access tokens bound to a sign-in session, rotating refresh tokens with reuse detection, sign-out of one or all devices, and sessions ended on suspension and erasure. Password sign-in is rate limited.
+- ✅ Observability: request ids on every response, log line and error; Prometheus metrics with product counters and overdue-work gauges. ⏳ Distributed tracing (OpenTelemetry) once there is more than one service.
+- ✅ CI: GitHub Actions runs the suite on H2 and on MySQL 8.4, then builds the container image and smoke-tests the full compose stack. ⏳ Deploy to an Indian cloud region.
 - **Exit:** load test at 5× the expected pilot peak. Staff can execute the takedown SLA.
 
 ### M3 · Mobile app v1 (≈ 8–12 weeks, starts once M1 APIs are frozen)
@@ -55,10 +58,11 @@ The scope and status are listed in §6 below.
 - Vernacular: English, Hindi and Kannada at pilot.
 - **Exit:** internal dog-food with 50+ staff and friends for 2 weeks with no P0 safety bugs.
 
-### M4 · Dating-ready v1.5 (≈ 4–6 weeks)
-- Date Mode: plan confirmation, **time-boxed exact location** (both consent, auto-expire), trusted contact share, scheduled check-in, **one-tap 112**, end-of-date confirmation.
-- Safety-Verified Meeting Points (partner venues), Discovery Trails.
-- Mutual Debrief (reveals only overlapping positive answers). Couple Mode.
+### M4 · Dating-ready v1.5 (≈ 4–6 weeks) 🟡 *backend in progress; delivered items are listed in §8*
+- ✅ Date Mode: plan confirmation, **time-boxed exact location** (both consent, auto-expire), trusted contact share, scheduled check-in, **one-tap 112**, end-of-date confirmation.
+- ✅ Safety-Verified Meeting Points (staff-curated venues). ⏳ Partner-venue programme, Discovery Trails.
+- ✅ Mutual Debrief (reveals only overlapping positive answers). ✅ Couple Mode.
+- ✅ Real Value Ledger (blueprint v2 §7.3), built from domain events.
 - Incident-response protocol with local police liaison in the launch city (§47.2).
 - **Exit:** tabletop exercise of a real-world harm incident is completed. Legal sign-off.
 
@@ -73,13 +77,15 @@ The scope and status are listed in §6 below.
 
 **Indicative total from start to public pilot: about 6–8 months** with the team above. Most of the risk is in M5 density, not in engineering.
 
-## 4. Engineering backlog after M1 (ordered)
+## 4. Engineering backlog (ordered)
 
-1. Redis-backed `RateLimiter` and `ProbeBudget` (interfaces already exist).
-2. Outbox table + domain events (`MomentPublished`, `SignalCreated`, `MutualReveal`, `UserBlocked`) to prepare for Kafka.
-3. Liveness vendor adapter + manual-review endpoints (`/admin/verification`).
-4. Media upload (pre-signed URLs), `media_ref` validation, Layer-0 preview rendition.
-5. Refresh tokens + revocation list. Phone OTP.
+Done in M2 so far: Redis state store, staff console with manual review, media uploads with ownership checks, phone OTP, the media processing worker, deferred erasure under a safety hold, Local Pulse push notifications, CI with a container build, sessions with refresh tokens, grievance redressal, observability, and the outbox with domain events (see §7). Done in M4 so far: Date Mode, Meeting Points, Mutual Debrief, Couple Mode and the Real Value Ledger (see §8).
+
+1. **Vendor adapters** behind the ports that already exist: liveness/age estimation (replaces `DevLivenessVerifier`), a TRAI DLT-registered SMS sender, and FCM/APNs push.
+2. **Deployment:** an Indian cloud region, a separate media-worker deployment (same image, it needs ffmpeg), the management port on the internal network for Prometheus, and alerts on `oneday_reports_overdue`, `oneday_grievances_overdue` and `oneday_sessions_reuse_detected_total`.
+3. Device attestation (Play Integrity / App Attest) on signup and location updates. Cache the per-request session check (one primary-key lookup today) if it shows up in load tests.
+4. ✅ Outbox table + domain events. Next: move the remaining inline side effects (pushes, report-outcome notices) onto events, and add a Kafka `EventTransport` once a trigger in tech arch v2 §1.3 fires.
+5. Local Pulse at scale: the job scans every user with a device every 10 minutes, which is fine for one city. Index by (time zone, pulse hour) before multi-city.
 6. Pacing Guardian heuristics on the message stream (v2).
 7. Normalised `profile_languages` / `profile_home_region` indexes when Roots scope needs SQL-side filtering.
 8. Re-verification every 90 days (blueprint §21.4) as a scheduled job.
@@ -112,6 +118,65 @@ The scope and status are listed in §6 below.
 | DPDP export + erasure | `privacy` | ✅ |
 | Flyway schema, H2-backed integration tests, OpenAPI docs | `resources/db/migration`, `src/test` | ✅ |
 
-**Verification:** 34 automated tests pass (unit tests for geohash, location privacy and IDs, plus end-to-end API tests covering the full loop, the verification gate, under-18 refusal, the Signal Budget, 48 h expiry, anti-spoofing, Roots/Language scopes, Safe Zones, k-anonymous heat, bounded discovery, and export/erasure). The README's curl walkthrough was also run against a live server.
+**Verification (at the end of M1):** 34 automated tests pass (unit tests for geohash, location privacy and IDs, plus end-to-end API tests covering the full loop, the verification gate, under-18 refusal, the Signal Budget, 48 h expiry, anti-spoofing, Roots/Language scopes, Safe Zones, k-anonymous heat, bounded discovery, and export/erasure). The README's curl walkthrough was also run against a live server.
 
 **Run locally:** see the repository `README.md`.
+
+## 7. Milestone 2: delivered so far
+
+| Capability | Where | Status |
+|---|---|---|
+| Rate limits and location probe budgets shared across replicas: atomic Lua scripts, keyed-HMAC cells so Redis never holds a readable trail (`redis` profile) | `common`, `geo` | ✅ |
+| Trust & Safety console: staff roles in tokens with a database re-check, manual-review decisions (approve / retry / reject+suspend), report queue by priority with SLA due times and overdue flags, claim/resolve, suspend/reinstate, staff management, append-only audit log | `staff`, `identity`, `safety` | ✅ |
+| Media uploads: pre-signed S3/MinIO PUT with signed type and length, random keys with no user id, moments may attach only the poster's own recent unused upload, short-lived view URLs, object deletion on moment delete and erasure | `media`, `moments` | ✅ |
+| Phone OTP login: non-enumerating requests, keyed-HMAC storage, 5-minute expiry, attempt lockout, per-number and per-network limits, 18+ and consent checks for phone signup | `identity`, `sms` | ✅ |
+| Media processing worker: uploads land in `incoming/`; photos are decoded with metadata ignored, checked for pixel bombs, orientation-corrected and re-encoded with no metadata; videos are transcoded by ffmpeg with `-map_metadata -1` plus a silent 4-second 360 px preview; only `READY` media can be attached; bad files are rejected with a reason; crash-recovery sweep. The dev object store is a real signed in-memory store. | `media` | ✅ |
+| Deferred erasure under a safety hold: an erasure request from an account with an open P0 report, or one suspended within the last 180 days, looks exactly like a normal erasure to its holder, but records are kept until the hold lifts and then erased automatically. Staff see pending erasures. | `privacy`, `identity`, `safety`, `staff` | ✅ |
+| Local Pulse push: device registration, per-user time zone, one push per local day at the chosen hour, only when there is something real to say, idempotent across replicas; Discretion Mode copy; safety-outcome notices to the warned user and the reporter (without revealing penalties) | `notify` | ✅ |
+| CI and container: the suite on H2 and on MySQL 8.4 (fails if any test is skipped), a JRE 25 + ffmpeg image running as non-root, a `docker compose` stack (MySQL, Redis, SeaweedFS as the S3 store), and a smoke test of the whole loop against the stack | `.github`, `Dockerfile`, `compose.yaml`, `scripts` | ✅ |
+| Sessions: access tokens bound to a session and checked on every request; refresh tokens stored as SHA-256, rotated on use, a replay ends the session (30 s grace for retries after a lost response); idle and absolute expiry; 10-device cap; sign out one device or all; suspension and erasure end sessions; suspended accounts get a restricted sign-in for export and appeal; per-network and per-account sign-in limits | `security`, `identity` | ✅ |
+| Grievance redressal: file and track grievances (suspended accounts too); instant acknowledgement with reference and deadline; 24 h for intimate imagery, 72 h for content removal, 15 days otherwise; staff queue by deadline with overdue flags; answers audited and routed onwards (Grievance Appellate Committee or Data Protection Board); published officer contact | `grievance`, `staff` | ✅ |
+| Observability: `X-Request-Id` on every response, log line and error body; unhandled errors logged in context and answered without internals; Prometheus metrics (token-free only on the internal management port) with core-loop and safety counters and overdue-work gauges | `common`, `staff` | ✅ |
+
+| Transactional outbox: events stored in the same transaction as their state change (`MANDATORY` propagation), relayed at least once by every replica under per-event leases, idempotent consumers through an inbox table, exponential backoff, a dead-letter queue with staff requeue, lag/backlog/dead gauges, erasure of events that mention an account | `events`, `staff` | ✅ |
+
+**Verification (round 5):** 98 automated tests pass on both H2 and MySQL 8.0, with only the two ffmpeg video tests skipped (ffmpeg was not installed in this environment). The Redis tests ran against a real `redis-server`. This round found and fixed:
+- instants carried nanoseconds while `DATETIME(6)` stores microseconds, so a row written "now" could round up past "now" and stay invisible to `<= now` queries. The application clock now ticks in microseconds.
+
+**Verification (round 4):** 91 automated tests pass, with nothing skipped, on both H2 and MySQL 8.4 (and on MySQL 8.0). CI runs both on JDK 25. The container image was built, and the compose stack passed the smoke test repeatedly. This round found and fixed:
+- intermittent media-processing failures against a non-AWS S3 store: the SDK's default streaming checksums, caught by the CI smoke test;
+- password sign-in had no rate limit;
+- stateless tokens could not be revoked, so a stolen token outlived sign-out and suspension;
+- suspended accounts could not sign in, so they could not exercise their data rights or appeal;
+- unhandled errors were logged after the request context was gone;
+- `mvnw` was committed without its executable bit.
+
+**Verification (round 3):** 75 automated tests passed, with nothing skipped in this environment. They included:
+- the Redis implementations, run against a real `redis-server`;
+- video processing, run against real `ffmpeg`;
+- a check that a GPS-like secret planted in photo EXIF/APP1/comment segments and in MP4 container tags is absent from the served files;
+- an offline check that the real S3 presigner signs content type and length.
+
+Where `redis-server` or `ffmpeg` is missing, those tests skip automatically. The new tests found and fixed seven bugs:
+- a phone signup refused for being under 18 returned 500 instead of 422;
+- phone login by a suspended account returned 500 instead of 403;
+- data export crashed for accounts without an email;
+- suspended accounts could not export their data;
+- media processing run inline lost its status updates, because it joined an already-committed transaction;
+- the daily-pulse claim upserted instead of inserting, so a second pass sent a duplicate;
+- the device cap could evict the device being registered.
+
+## 8. Milestone 4 (dating-ready v1.5): delivered so far
+
+| Capability | Where | Status |
+|---|---|---|
+| Date Mode plans between active Connections: propose (a Meeting Point or a named public place, 30 min to 8 h, up to 30 days ahead, one open plan per Connection), accept/decline by the invited person, cancel by either, and expiry of unanswered proposals. The plan's state machine uses optimistic locking, so replicas can't race. | `dates` | ✅ |
+| **Time-boxed exact location:** each person switches sharing on for one plan; positions flow only while *both* share, only from 30 min before the start until the end, one overwritten point per person (no trail), hidden once stale, and stopped for both the moment the plan closes. Blocks and soft exits end it at read time as well. | `dates` | ✅ |
+| **Trusted contact:** a per-plan contact is texted a private link (256-bit token, stored as SHA-256) that follows only the sharer's side: place, times, live position, check-ins, alerts and "home safe". It needs no account and stops working after the plan's after-care window. | `dates`, `sms` | ✅ |
+| **Check-ins and SOS:** "Going OK?" at a time each person chooses (default: 1 h in); "I need help", one-tap SOS or an unanswered prompt (with a trusted contact set) escalates through the outbox to a text to the contact and to the Trust & Safety alert desk (with the last shared position, and every read audited). The other person is never told. SOS keeps working after a mid-date block. | `dates`, `events`, `staff` | ✅ |
+| **End of date and Mutual Debrief:** "home safe" confirmation; the debrief reveals only positive answers both people gave, and only once both have answered; missing safety answers privately offer the report route. | `dates` | ✅ |
+| **Safety-Verified Meeting Points:** moderator-curated public venues (audited), listed nearest first from the viewer's own cell | `dates` | ✅ |
+| **Couple Mode:** each side's confirmation is private; once both confirm (on top of a Mutual Spark), both people leave Discovery in both directions (not shown, no browsing, no new signals) while Friend Mode continues. Withdrawing a spark, exiting or blocking ends it. | `connections`, `discovery`, `signals` | ✅ |
+| **Real Value Ledger:** a private monthly read model built from `MutualRevealed`, `MutualSparked`, `DateCompleted` and `CoupleFormed` events (including Roots connections), plus "conversations that went somewhere". No ranks or comparisons. Included in export and removed on erasure. | `ledger`, `chat` | ✅ |
+
+Data retention: trusted-contact details, share links and positions are purged 2 h after a plan closes. The exception is an unresolved safety escalation, which keeps its evidence until staff resolve it, and never for more than 7 days.

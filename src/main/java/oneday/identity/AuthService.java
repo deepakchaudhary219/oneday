@@ -8,10 +8,11 @@ import java.time.ZoneOffset;
 import java.util.Locale;
 
 import oneday.common.ApiException;
+import oneday.common.ProductMetrics;
 import oneday.common.RateLimiter;
 import oneday.config.OneDayProperties;
 import oneday.profile.ProfileService;
-import oneday.security.TokenService;
+import oneday.security.SessionService;
 import oneday.security.TokenService.IssuedToken;
 
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -29,7 +30,7 @@ public class AuthService {
 
 	private final PasswordEncoder passwordEncoder;
 
-	private final TokenService tokens;
+	private final SessionService sessions;
 
 	private final RateLimiter rateLimiter;
 
@@ -37,12 +38,15 @@ public class AuthService {
 
 	private final OneDayProperties properties;
 
+	private final ProductMetrics metrics;
+
 	public AuthService(UserRepository users, ProfileService profiles, PasswordEncoder passwordEncoder,
-			TokenService tokens, RateLimiter rateLimiter, Clock clock, OneDayProperties properties) {
+			SessionService sessions, RateLimiter rateLimiter, Clock clock, OneDayProperties properties, ProductMetrics metrics) {
+		this.metrics = metrics;
 		this.users = users;
 		this.profiles = profiles;
 		this.passwordEncoder = passwordEncoder;
-		this.tokens = tokens;
+		this.sessions = sessions;
 		this.rateLimiter = rateLimiter;
 		this.clock = clock;
 		this.properties = properties;
@@ -53,29 +57,56 @@ public class AuthService {
 	 * anything is persisted: the platform does not process children's data (DPDP Rules, blueprint §24.1).
 	 */
 	@Transactional
-	public IssuedToken register(RegisterRequest request, String clientIp) {
+	public IssuedToken register(RegisterRequest request, ClientInfo client) {
+		checkSignupAllowed(client.ip(), request.dateOfBirth(), request.consentVersion());
+		String email = request.email().trim().toLowerCase(Locale.ROOT);
+		if (users.existsByEmail(email)) {
+			throw ApiException.conflict("EMAIL_TAKEN", "An account with this email already exists");
+		}
+		User user = users.save(User.withEmail(email, passwordEncoder.encode(request.password()), request.dateOfBirth(),
+				request.consentVersion(), clock.instant()));
+		profiles.create(user.getId(), request.displayName());
+		return sessions.start(user, client.device());
+	}
+
+	/**
+	 * Signup by a phone number the caller has just proven they control (see {@link OtpService}). Runs inside
+	 * the OTP transaction and rejects before writing anything, so a refusal must not poison that
+	 * transaction (it still has to record the attempt).
+	 */
+	@Transactional(noRollbackFor = ApiException.class)
+	public IssuedToken registerPhone(String phone, LocalDate dateOfBirth, String displayName, String consentVersion,
+			ClientInfo client) {
+		checkSignupAllowed(client.ip(), dateOfBirth, consentVersion);
+		if (users.existsByPhone(phone)) {
+			throw ApiException.conflict("PHONE_TAKEN", "An account with this phone number already exists");
+		}
+		User user = users.save(User.withPhone(phone, dateOfBirth, consentVersion, clock.instant()));
+		profiles.create(user.getId(), displayName);
+		return sessions.start(user, client.device());
+	}
+
+	/** A suspended account may sign in: it keeps its data rights and can appeal (see {@link #login}). */
+	@Transactional(noRollbackFor = ApiException.class)
+	public java.util.Optional<IssuedToken> loginPhone(String phone, ClientInfo client) {
+		return users.findByPhone(phone).map(user -> sessions.start(user, client.device()));
+	}
+
+	private void checkSignupAllowed(String clientIp, LocalDate dateOfBirth, String consentVersion) {
 		if (!rateLimiter.tryAcquire("register:" + clientIp, properties.registration().perIpPerHour(),
 				Duration.ofHours(1))) {
 			throw ApiException.tooManyRequests("SIGNUP_RATE_LIMITED", "Too many signups from this network, try later");
 		}
 		LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
-		if (request.dateOfBirth().isAfter(today) || Period.between(request.dateOfBirth(), today).getYears() > 120) {
+		if (dateOfBirth.isAfter(today) || Period.between(dateOfBirth, today).getYears() > 120) {
 			throw ApiException.badRequest("INVALID_DATE_OF_BIRTH", "Please enter a real date of birth");
 		}
-		if (Period.between(request.dateOfBirth(), today).getYears() < ADULT_AGE) {
+		if (Period.between(dateOfBirth, today).getYears() < ADULT_AGE) {
 			throw ApiException.unprocessable("UNDER_AGE", "OneDay is only for adults aged 18 and over");
 		}
-		if (!properties.registration().currentConsentVersion().equals(request.consentVersion())) {
+		if (!properties.registration().currentConsentVersion().equals(consentVersion)) {
 			throw ApiException.badRequest("CONSENT_OUTDATED", "Please review and accept the current privacy notice");
 		}
-		String email = request.email().trim().toLowerCase(Locale.ROOT);
-		if (users.existsByEmail(email)) {
-			throw ApiException.conflict("EMAIL_TAKEN", "An account with this email already exists");
-		}
-		User user = users.save(new User(email, passwordEncoder.encode(request.password()), request.dateOfBirth(),
-				request.consentVersion(), clock.instant()));
-		profiles.create(user.getId(), request.displayName());
-		return tokens.issue(user);
 	}
 
 	@Transactional
@@ -83,14 +114,33 @@ public class AuthService {
 		users.deleteById(userId);
 	}
 
-	@Transactional(readOnly = true)
-	public IssuedToken login(LoginRequest request) {
-		User user = users.findByEmail(request.email().trim().toLowerCase(Locale.ROOT))
-			.filter(u -> passwordEncoder.matches(request.password(), u.getPasswordHash()))
-			.orElseThrow(() -> ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect"));
-		if (!user.isActive()) {
-			throw ApiException.forbidden("ACCOUNT_SUSPENDED", "This account is suspended");
+	/**
+	 * Password guessing is limited per network and per account. A suspended account may still sign in: its
+	 * token carries no contact scopes and every feature re-checks the account, but the holder can export their
+	 * data, read why they were suspended and appeal. Accounts awaiting erasure have no email left to match.
+	 */
+	@Transactional
+	public IssuedToken login(LoginRequest request, ClientInfo client) {
+		OneDayProperties.Security limits = properties.security();
+		if (!rateLimiter.tryAcquire("login-ip:" + client.ip(), limits.loginsPerIpPerHour(), Duration.ofHours(1))) {
+			throw tooManyLogins();
 		}
-		return tokens.issue(user);
+		User user = users.findByEmail(request.email().trim().toLowerCase(Locale.ROOT)).orElse(null);
+		if (user != null && !rateLimiter.tryAcquire("login-account:" + user.getId(), limits.loginsPerAccountPerHour(),
+				Duration.ofHours(1))) {
+			throw tooManyLogins();
+		}
+		if (user == null || user.getPasswordHash() == null
+				|| !passwordEncoder.matches(request.password(), user.getPasswordHash())) {
+			metrics.login("failure");
+			throw ApiException.unauthorized("INVALID_CREDENTIALS", "Email or password is incorrect");
+		}
+		metrics.login("success");
+		return sessions.start(user, client.device());
+	}
+
+	private ApiException tooManyLogins() {
+		metrics.login("rate_limited");
+		return ApiException.tooManyRequests("LOGIN_RATE_LIMITED", "Too many sign-in attempts. Try again later.");
 	}
 }

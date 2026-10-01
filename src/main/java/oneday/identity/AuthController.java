@@ -25,11 +25,11 @@ public class AuthController {
 	@PostMapping("/register")
 	@ResponseStatus(HttpStatus.CREATED)
 	IssuedToken register(@Valid @RequestBody RegisterRequest request, HttpServletRequest http) {
-		return auth.register(request, http.getRemoteAddr());
+		return auth.register(request, ClientInfo.of(http));
 	}
 
 	@PostMapping("/login")
-	IssuedToken login(@Valid @RequestBody LoginRequest request) {
-		return auth.login(request);
+	IssuedToken login(@Valid @RequestBody LoginRequest request, HttpServletRequest http) {
+		return auth.login(request, ClientInfo.of(http));
 	}
 }

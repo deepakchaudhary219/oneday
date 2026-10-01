@@ -86,10 +86,9 @@ public class Moment {
 		return shareScope == ShareScope.PUBLIC_DISCOVERY;
 	}
 
-	/** Layer-0 preview reference: only for video, only if the poster allowed it. */
-	public String previewRef() {
-		return kind == MomentKind.VIDEO && previewAllowed && mediaRef != null ? mediaRef + "?rendition=preview-lowfi"
-				: null;
+	/** A silent low-fi Layer-0 preview exists only for video, and only if the poster allowed it. */
+	public boolean hasPreview() {
+		return kind == MomentKind.VIDEO && previewAllowed && mediaRef != null;
 	}
 
 	public String getId() {

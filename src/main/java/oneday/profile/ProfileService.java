@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
 
@@ -42,8 +43,19 @@ public class ProfileService {
 		return profiles.save(new Profile(userId, displayName.trim(), defaultRadius, clock.instant()));
 	}
 
+	@Transactional(readOnly = true)
+	public Optional<Profile> find(String userId) {
+		return profiles.findById(userId);
+	}
+
 	public Profile require(String userId) {
 		return profiles.findById(userId).orElseThrow(() -> ApiException.notFound("Profile"));
+	}
+
+	/** For data export: also works for suspended accounts, which keep their data rights. */
+	@Transactional(readOnly = true)
+	public ProfileView exportView(String userId) {
+		return ProfileView.of(require(userId), guard.requireExisting(userId));
 	}
 
 	@Transactional(readOnly = true)
@@ -109,6 +121,14 @@ public class ProfileService {
 		}
 		if (request.pulseHour() != null) {
 			profile.setPulseHour(request.pulseHour());
+		}
+		if (request.timeZone() != null) {
+			try {
+				profile.setTimeZone(java.time.ZoneId.of(request.timeZone().trim()).getId());
+			}
+			catch (java.time.DateTimeException ex) {
+				throw ApiException.badRequest("INVALID_TIME_ZONE", "Use a time zone such as Asia/Kolkata");
+			}
 		}
 		profile.touch(clock.instant());
 		return ProfileView.of(profile, user);

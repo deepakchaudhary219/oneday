@@ -134,15 +134,18 @@ class MapAndPrivacyIntegrationTest extends ApiTestSupport {
 	void publicSharesMustBeLiveCapturesWithLocation() throws Exception {
 		String token = verifiedUser("Tara");
 		String galleryUpload = """
-				{"kind":"PHOTO","mediaRef":"media/old.jpg","shareScope":"PUBLIC_DISCOVERY","capturedLive":false}""";
+				{"kind":"PHOTO","mediaRef":"%s","shareScope":"PUBLIC_DISCOVERY","capturedLive":false}"""
+			.formatted(upload(token, "PHOTO", "image/jpeg"));
 		postAs(token, "/moments", galleryUpload).andExpect(status().isUnprocessableContent())
 			.andExpect(jsonPath("$.code").value("LIVE_CAPTURE_REQUIRED"));
 		String live = """
-				{"kind":"PHOTO","mediaRef":"media/now.jpg","shareScope":"PUBLIC_DISCOVERY","capturedLive":true}""";
+				{"kind":"PHOTO","mediaRef":"%s","shareScope":"PUBLIC_DISCOVERY","capturedLive":true}"""
+			.formatted(upload(token, "PHOTO", "image/jpeg"));
 		postAs(token, "/moments", live).andExpect(status().isConflict())
 			.andExpect(jsonPath("$.code").value("LOCATION_REQUIRED"));
 		String friendsOnly = """
-				{"kind":"PHOTO","mediaRef":"media/old.jpg","shareScope":"FRIENDS_ONLY","capturedLive":false}""";
+				{"kind":"PHOTO","mediaRef":"%s","shareScope":"FRIENDS_ONLY","capturedLive":false}"""
+			.formatted(upload(token, "PHOTO", "image/jpeg"));
 		postAs(token, "/moments", friendsOnly).andExpect(status().isCreated());
 	}
 

@@ -7,16 +7,26 @@ import java.util.Map;
 import oneday.chat.ChatService;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionService;
+import oneday.dates.DateService;
+import oneday.events.EventOperations;
 import oneday.geo.LocationService;
+import oneday.grievance.GrievanceService;
+import oneday.identity.AccountAdministration;
 import oneday.identity.AuthService;
 import oneday.identity.User;
 import oneday.identity.UserGuard;
+import oneday.ledger.LedgerService;
+import oneday.media.MediaService;
 import oneday.moments.MomentService;
+import oneday.notify.NotificationService;
 import oneday.profile.ProfileService;
 import oneday.safety.SafetyService;
+import oneday.security.SessionService;
 import oneday.signals.SignalService;
+import oneday.staff.StaffDirectory;
 import oneday.verification.VerificationService;
 
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -47,9 +57,32 @@ public class PrivacyService {
 
 	private final VerificationService verification;
 
+	private final StaffDirectory staff;
+
+	private final MediaService media;
+
+	private final AccountAdministration administration;
+
+	private final NotificationService notifications;
+
+	private final SessionService sessions;
+
+	private final GrievanceService grievances;
+
+	private final LedgerService ledger;
+
+	private final EventOperations events;
+
+	private final DateService dates;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
-			SafetyService safety, VerificationService verification) {
+			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
+			AccountAdministration administration, NotificationService notifications, SessionService sessions,
+			GrievanceService grievances, LedgerService ledger, EventOperations events, DateService dates) {
+		this.dates = dates;
+		this.ledger = ledger;
+		this.events = events;
 		this.guard = guard;
 		this.accounts = accounts;
 		this.profiles = profiles;
@@ -60,17 +93,24 @@ public class PrivacyService {
 		this.chat = chat;
 		this.safety = safety;
 		this.verification = verification;
+		this.staff = staff;
+		this.media = media;
+		this.administration = administration;
+		this.notifications = notifications;
+		this.sessions = sessions;
+		this.grievances = grievances;
 	}
 
 	/** Everything we hold about the user. Other people's identities are not included. */
 	@Transactional(readOnly = true)
 	public Map<String, Object> export(String userId) {
-		User user = guard.requireActive(userId);
+		User user = guard.requireExisting(userId);
 		Map<String, Object> data = new LinkedHashMap<>();
-		data.put("account", Map.of("email", user.getEmail(), "dateOfBirth", user.getDateOfBirth(), "createdAt",
-				user.getCreatedAt(), "verificationStatus", user.getVerificationStatus(), "consentVersion",
-				user.getConsentVersion(), "consentedAt", user.getConsentedAt()));
-		data.put("profile", profiles.me(userId));
+		data.put("account", row("email", user.getEmail(), "phone", user.getPhone(), "dateOfBirth",
+				user.getDateOfBirth(), "createdAt", user.getCreatedAt(), "verificationStatus",
+				user.getVerificationStatus(), "consentVersion", user.getConsentVersion(), "consentedAt",
+				user.getConsentedAt()));
+		data.put("profile", profiles.exportView(userId));
 		data.put("location", locations.current(userId).orElse(null));
 		data.put("moments", moments.allBy(userId)
 			.stream()
@@ -102,6 +142,24 @@ public class PrivacyService {
 			.stream()
 			.map(r -> row("category", r.getCategory(), "status", r.getStatus(), "at", r.getCreatedAt()))
 			.toList());
+		data.put("devices", notifications.devicesOf(userId));
+		data.put("signIns", sessions.history(userId)
+			.stream()
+			.map(s -> row("device", s.getDevice(), "since", s.getCreatedAt(), "lastUsed", s.getLastUsedAt(),
+					"ended", s.getEndedAt(), "endReason", s.getEndReason()))
+			.toList());
+		data.put("notices", notifications.notices(userId));
+		data.put("grievances", grievances.filedBy(userId)
+			.stream()
+			.map(g -> row("reference", g.getReference(), "category", g.getCategory(), "description",
+					g.getDescription(), "status", g.getStatus(), "filedAt", g.getCreatedAt(), "response",
+					g.getResponse()))
+			.toList());
+		data.put("datePlans", dates.export(userId));
+		data.put("realValueLedger", ledger.allFor(userId)
+			.stream()
+			.map(e -> row("outcome", e.getKind(), "at", e.getOccurredAt()))
+			.toList());
 		data.put("verificationAttempts", verification.attemptsBy(userId)
 			.stream()
 			.map(a -> row("outcome", a.getOutcome(), "at", a.getCreatedAt()))
@@ -110,21 +168,57 @@ public class PrivacyService {
 	}
 
 	/**
+	 * The holder's erasure request. Normally everything is erased at once. If the account is under a safety
+	 * hold (open P0 report, or enforcement within the evidence-retention period), the account disappears
+	 * immediately (identifiers released, invisible, logged out) but its records are kept until the hold
+	 * lifts, then erased by {@link #completePendingErasures()}. The response is identical either way, so a
+	 * person under investigation is not tipped off.
+	 */
+	@Transactional
+	public void erase(String userId) {
+		guard.requireExisting(userId);
+		if (safety.holdReason(userId).isPresent()) {
+			administration.deactivateForErasure(userId);
+			locations.forget(userId);
+			connections.endAllFor(userId);
+			dates.cancelAllFor(userId);
+			return;
+		}
+		eraseNow(userId);
+	}
+
+	/** Finishes erasures that were deferred by a hold which has since lifted. */
+	@Scheduled(fixedDelayString = "PT1H", initialDelayString = "PT10M")
+	@Transactional
+	public void completePendingErasures() {
+		administration.pendingErasures()
+			.stream()
+			.filter(u -> safety.holdReason(u.getId()).isEmpty())
+			.forEach(u -> eraseNow(u.getId()));
+	}
+
+	/**
 	 * Erases the account and everything attached to it. Conversations are removed for both participants.
 	 * Reports the user filed are kept with the reporter detached; reports about the user are retained as
 	 * required for safety and legal obligations.
 	 */
-	@Transactional
-	public void erase(String userId) {
-		guard.requireActive(userId);
+	private void eraseNow(String userId) {
 		List<Connection> all = connections.all(userId);
+		dates.forget(userId);
 		chat.deleteForConnections(all.stream().map(Connection::getId).toList());
 		connections.deleteAll(all);
 		signals.deleteInvolving(userId);
 		moments.deleteAllBy(userId);
+		media.deleteAllFor(userId);
 		locations.forget(userId);
 		safety.forget(userId);
 		verification.forget(userId);
+		staff.forget(userId);
+		notifications.forget(userId);
+		sessions.forget(userId);
+		grievances.forget(userId);
+		ledger.forget(userId);
+		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
 	}
