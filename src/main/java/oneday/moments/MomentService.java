@@ -7,6 +7,8 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
+import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
@@ -213,6 +215,38 @@ public class MomentService {
 		String activity = chain.isEmpty() ? null : chain.get(0).getActivityTag();
 		boolean open = chain.size() < MAX_RELAY_LENGTH;
 		return new RelayView(rootId, activity, links.size(), open, links);
+	}
+
+	/**
+	 * Stories from your Connections (any share scope) plus your own, grouped per person for the story rings: yours
+	 * first, then whoever posted most recently. Bounded (at most 200 frames), live only, blocked people excluded.
+	 */
+	@Transactional(readOnly = true)
+	public List<FriendStories> friendsStories(String viewerId) {
+		guard.requireActive(viewerId);
+		Set<String> people = new HashSet<>(connections.connectedUserIds(viewerId));
+		people.removeAll(blocks.blockedEitherWay(viewerId));
+		people.retainAll(guard.reachableAmong(people));
+		people.add(viewerId);
+		Map<String, List<MomentView>> byOwner = new LinkedHashMap<>();
+		Map<String, Instant> latest = new HashMap<>();
+		Map<String, String> names = new HashMap<>();
+		for (Moment m : moments.findByOwnerIdInAndExpiresAtAfterOrderByCreatedAtAsc(people, clock.instant(),
+				PageRequest.of(0, 200))) {
+			String name = names.computeIfAbsent(m.getOwnerId(), id -> profiles.require(id).firstName());
+			byOwner.computeIfAbsent(m.getOwnerId(), k -> new ArrayList<>()).add(full(m, name));
+			latest.put(m.getOwnerId(), m.getCreatedAt());
+		}
+		return byOwner.entrySet()
+			.stream()
+			.sorted(Comparator.comparing((Map.Entry<String, List<MomentView>> e) -> !e.getKey().equals(viewerId))
+				.thenComparing(e -> latest.get(e.getKey()), Comparator.reverseOrder()))
+			.map(e -> new FriendStories(e.getKey().equals(viewerId), names.get(e.getKey()), e.getValue()))
+			.toList();
+	}
+
+	/** One person's live stories, oldest first (the order they're watched in). No ids: {@code mine} says whose. */
+	public record FriendStories(boolean mine, String firstName, List<MomentView> moments) {
 	}
 
 	/**

@@ -56,4 +56,7 @@ public interface MomentRepository extends JpaRepository<Moment, String> {
 
 	List<Moment> findByOwnerIdInAndShareScopeAndExpiresAtAfterOrderByCreatedAtDesc(Collection<String> ownerIds,
 			ShareScope scope, Instant now, Pageable page);
+
+	List<Moment> findByOwnerIdInAndExpiresAtAfterOrderByCreatedAtAsc(Collection<String> ownerIds, Instant now,
+			Pageable page);
 }

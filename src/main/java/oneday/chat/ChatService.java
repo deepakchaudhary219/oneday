@@ -142,6 +142,28 @@ public class ChatService {
 		return matches ? Optional.of(conversation.getConnectionId()) : Optional.empty();
 	}
 
+	/**
+	 * The newest message of each conversation, for the chat list. Encrypted messages preview as such: the server
+	 * never has their text.
+	 */
+	@Transactional(readOnly = true)
+	public Map<String, Preview> previews(String viewerId, Collection<String> conversationIds) {
+		if (conversationIds.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, Preview> out = new HashMap<>();
+		for (Message m : messages.findLatestIn(conversationIds)) {
+			out.merge(m.getConversationId(),
+					new Preview(m.isEncrypted() ? "Encrypted message" : m.getBody(), m.getCreatedAt(),
+							m.getSenderId().equals(viewerId)),
+					(a, b) -> a); // same-instant ties: keep one
+		}
+		return out;
+	}
+
+	public record Preview(String text, Instant at, boolean fromMe) {
+	}
+
 	/** Whether both people have written in this connection's conversation (calls open up after that). */
 	@Transactional(readOnly = true)
 	public boolean bothHaveWritten(Connection connection) {

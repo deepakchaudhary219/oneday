@@ -12,6 +12,11 @@ import org.springframework.data.repository.query.Param;
 
 public interface MessageRepository extends JpaRepository<Message, String> {
 
+	/** The newest message of each conversation, in one query (chat list previews). */
+	@Query("select m from Message m where m.conversationId in :ids and m.createdAt = "
+			+ "(select max(m2.createdAt) from Message m2 where m2.conversationId = m.conversationId)")
+	List<Message> findLatestIn(@Param("ids") Collection<String> ids);
+
 	List<Message> findByConversationIdAndCreatedAtBeforeOrderByCreatedAtDesc(String conversationId, Instant before,
 			Pageable page);
 

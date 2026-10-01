@@ -34,6 +34,11 @@ public class MomentController {
 		return moments.publish(jwt.getSubject(), request);
 	}
 
+	@GetMapping("/friends")
+	List<MomentService.FriendStories> friends(@AuthenticationPrincipal Jwt jwt) {
+		return moments.friendsStories(jwt.getSubject());
+	}
+
 	@GetMapping("/mine")
 	List<MomentView> mine(@AuthenticationPrincipal Jwt jwt) {
 		return moments.mine(jwt.getSubject());

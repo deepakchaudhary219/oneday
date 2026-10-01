@@ -2,6 +2,9 @@ package oneday.connections;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Comparator;
+import java.util.HashMap;
+import java.util.Map;
 
 import oneday.chat.ChatService;
 import oneday.chat.Conversation;
@@ -44,12 +47,22 @@ public class ConnectionController {
 	public List<ConnectionView> list(@AuthenticationPrincipal Jwt jwt) {
 		String me = jwt.getSubject();
 		Profile mine = profiles.require(me);
-		return connections.active(me).stream().map(c -> {
-			String conversationId = chat.forConnection(c.getId()).map(Conversation::getId).orElse(null);
+		List<Connection> active = connections.active(me);
+		Map<String, String> conversationIds = new HashMap<>();
+		active.forEach(c -> chat.forConnection(c.getId()).ifPresent(conv -> conversationIds.put(c.getId(), conv.getId())));
+		Map<String, ChatService.Preview> previews = chat.previews(me, conversationIds.values());
+		return active.stream().map(c -> {
+			String conversationId = conversationIds.get(c.getId());
 			Profile them = profiles.require(c.otherThan(me));
+			ChatService.Preview last = conversationId == null ? null : previews.get(conversationId);
 			return new ConnectionView(c.getId(), conversationId, them.getDisplayName(), c.getOrigin(), c.getCreatedAt(),
-					c.isMutualSpark(), c.isCouple(), warmth.of(c, conversationId, mine, them));
-		}).toList();
+					c.isMutualSpark(), c.isCouple(), warmth.of(c, conversationId, mine, them),
+					last == null ? null : last.text(), last == null ? null : last.at(), last != null && last.fromMe());
+		})
+			// Most recent conversation first; new connections with no messages by when they connected.
+			.sorted(Comparator.comparing((ConnectionView v) -> v.lastMessageAt() != null ? v.lastMessageAt() : v.since())
+				.reversed())
+			.toList();
 	}
 
 	@PostMapping("/{connectionId}/spark")
@@ -84,6 +97,7 @@ public class ConnectionController {
 	 * one-sided spark or confirmation is never exposed.
 	 */
 	public record ConnectionView(String id, String conversationId, String displayName, ConnectionOrigin origin,
-			Instant since, boolean mutualSpark, boolean coupleMode, ConnectionWarmth.Warmth warmth) {
+			Instant since, boolean mutualSpark, boolean coupleMode, ConnectionWarmth.Warmth warmth, String lastMessage,
+			Instant lastMessageAt, boolean lastFromMe) {
 	}
 }

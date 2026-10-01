@@ -3460,6 +3460,27 @@
         "tags" : [ "Moment" ]
       }
     },
+    "/moments/friends" : {
+      "get" : {
+        "operationId" : "momentFriends",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "type" : "array",
+                  "items" : {
+                    "$ref" : "#/components/schemas/FriendStories"
+                  }
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Moment" ]
+      }
+    },
     "/moments/mine" : {
       "get" : {
         "operationId" : "momentMine",
@@ -6993,6 +7014,16 @@
           "id" : {
             "type" : "string"
           },
+          "lastFromMe" : {
+            "type" : "boolean"
+          },
+          "lastMessage" : {
+            "type" : "string"
+          },
+          "lastMessageAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
           "mutualSpark" : {
             "type" : "boolean"
           },
@@ -7588,6 +7619,23 @@
           },
           "statusId" : {
             "type" : "string"
+          }
+        }
+      },
+      "FriendStories" : {
+        "type" : "object",
+        "properties" : {
+          "firstName" : {
+            "type" : "string"
+          },
+          "mine" : {
+            "type" : "boolean"
+          },
+          "moments" : {
+            "type" : "array",
+            "items" : {
+              "$ref" : "#/components/schemas/MomentView"
+            }
           }
         }
       },
