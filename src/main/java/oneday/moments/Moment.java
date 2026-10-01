@@ -48,6 +48,18 @@ public class Moment {
 
 	private Double cellLon;
 
+	/** The Today's Prompt this moment answers, if any. */
+	private String promptKey;
+
+	/** The first moment of the Story Relay this moment joined, if any. */
+	private String relayRootId;
+
+	private String replyToId;
+
+	/** Position in its relay (the root is 0). */
+	@Column(nullable = false)
+	private int relayDepth;
+
 	@Column(nullable = false)
 	private Instant createdAt;
 
@@ -76,6 +88,32 @@ public class Moment {
 		}
 		this.createdAt = now;
 		this.expiresAt = expiresAt;
+	}
+
+	void answerPrompt(String promptKey) {
+		this.promptKey = promptKey;
+	}
+
+	void joinRelay(Moment replyTo) {
+		this.replyToId = replyTo.getId();
+		this.relayRootId = replyTo.relayRootId != null ? replyTo.relayRootId : replyTo.getId();
+		this.relayDepth = replyTo.relayDepth + 1;
+	}
+
+	public String getPromptKey() {
+		return promptKey;
+	}
+
+	public String getRelayRootId() {
+		return relayRootId;
+	}
+
+	public String getReplyToId() {
+		return replyToId;
+	}
+
+	public int getRelayDepth() {
+		return relayDepth;
 	}
 
 	public boolean isLive(Instant now) {

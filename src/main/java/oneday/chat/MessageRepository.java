@@ -31,6 +31,11 @@ public interface MessageRepository extends JpaRepository<Message, String> {
 	List<String> findActiveConversations(@Param("conversationIds") Collection<String> conversationIds,
 			@Param("from") Instant from, @Param("to") Instant to, @Param("minTotal") long minTotal);
 
+	@Query("select m.senderId, m.createdAt from Message m where m.conversationId = :conversationId "
+			+ "and m.createdAt >= :since")
+	List<Object[]> findSendersSince(@Param("conversationId") String conversationId, @Param("since") Instant since,
+			Pageable page);
+
 	@Modifying
 	@Query("delete from Message m where m.conversationId in :conversationIds")
 	void deleteByConversationIds(@Param("conversationIds") Collection<String> conversationIds);

@@ -1,6 +1,7 @@
 package oneday.moments;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 
 import org.springframework.data.domain.Pageable;
@@ -24,6 +25,17 @@ public interface MomentRepository extends JpaRepository<Moment, String> {
 	List<Moment> findByOwnerIdOrderByCreatedAtDesc(String ownerId);
 
 	boolean existsByMediaRef(String mediaRef);
+
+	boolean existsByRelayRootIdAndOwnerId(String relayRootId, String ownerId);
+
+	List<Moment> findByRelayRootIdAndExpiresAtAfterOrderByRelayDepthAscCreatedAtAsc(String relayRootId, Instant now,
+			Pageable page);
+
+	@Query("select m.relayRootId, count(m) from Moment m where m.relayRootId in :rootIds and m.expiresAt > :now "
+			+ "group by m.relayRootId")
+	List<Object[]> countRelays(@Param("rootIds") Collection<String> rootIds, @Param("now") Instant now);
+
+	List<Moment> findByOwnerIdAndPromptKeyAndExpiresAtAfter(String ownerId, String promptKey, Instant now);
 
 	@Modifying
 	@Query("delete from Moment m where m.ownerId = :ownerId")

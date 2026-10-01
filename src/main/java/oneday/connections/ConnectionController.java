@@ -7,6 +7,7 @@ import oneday.chat.ChatService;
 import oneday.chat.Conversation;
 import oneday.connections.ConnectionService.CoupleView;
 import oneday.connections.ConnectionService.SparkView;
+import oneday.profile.Profile;
 import oneday.profile.ProfileService;
 
 import org.springframework.http.ResponseEntity;
@@ -29,7 +30,11 @@ public class ConnectionController {
 
 	private final ProfileService profiles;
 
-	public ConnectionController(ConnectionService connections, ChatService chat, ProfileService profiles) {
+	private final ConnectionWarmth warmth;
+
+	public ConnectionController(ConnectionService connections, ChatService chat, ProfileService profiles,
+			ConnectionWarmth warmth) {
+		this.warmth = warmth;
 		this.connections = connections;
 		this.chat = chat;
 		this.profiles = profiles;
@@ -38,11 +43,12 @@ public class ConnectionController {
 	@GetMapping
 	public List<ConnectionView> list(@AuthenticationPrincipal Jwt jwt) {
 		String me = jwt.getSubject();
+		Profile mine = profiles.require(me);
 		return connections.active(me).stream().map(c -> {
 			String conversationId = chat.forConnection(c.getId()).map(Conversation::getId).orElse(null);
-			String name = profiles.require(c.otherThan(me)).getDisplayName();
-			return new ConnectionView(c.getId(), conversationId, name, c.getOrigin(), c.getCreatedAt(),
-					c.isMutualSpark(), c.isCouple());
+			Profile them = profiles.require(c.otherThan(me));
+			return new ConnectionView(c.getId(), conversationId, them.getDisplayName(), c.getOrigin(), c.getCreatedAt(),
+					c.isMutualSpark(), c.isCouple(), warmth.of(c, conversationId, mine, them));
 		}).toList();
 	}
 
@@ -78,6 +84,6 @@ public class ConnectionController {
 	 * one-sided spark or confirmation is never exposed.
 	 */
 	public record ConnectionView(String id, String conversationId, String displayName, ConnectionOrigin origin,
-			Instant since, boolean mutualSpark, boolean coupleMode) {
+			Instant since, boolean mutualSpark, boolean coupleMode, ConnectionWarmth.Warmth warmth) {
 	}
 }

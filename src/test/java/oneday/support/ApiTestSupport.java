@@ -47,7 +47,7 @@ public abstract class ApiTestSupport {
 
 	protected static final double BLR_LON = 77.6245;
 
-	private static final List<String> TABLES = List.of("processed_events", "outbox_events", "ledger_entries", "date_participants", "date_plans",
+	private static final List<String> TABLES = List.of("daily_prompts", "processed_events", "outbox_events", "ledger_entries", "date_participants", "date_plans",
 			"meeting_points", "grievances", "sessions", "notices", "pulse_deliveries", "devices", "staff_actions", "staff_members", "messages", "conversations", "connections", "signals",
 			"moments", "media_uploads", "user_locations", "blocks", "reports", "verification_attempts", "otp_challenges", "profiles", "users");
 

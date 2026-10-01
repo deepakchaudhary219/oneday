@@ -287,7 +287,7 @@ public class DateService {
 		String when = WHEN.format(plan.getStartsAt().atZone(ZoneId.of(me.getTimeZone())));
 		boolean texted = sms.text(phone, me.firstName() + " added you as their trusted contact for a meet-up on OneDay: "
 				+ plan.getPlaceName() + ", " + when + ". Follow along until it ends: " + url
-				+ " If you are worried and can't reach them, call " + settings.emergencyNumber() + ".");
+				+ " If you are worried and can't reach them, call " + emergencyFor(userId) + ".");
 		return new TrustedContactView(contactName, maskPhone(phone), url, texted);
 	}
 
@@ -322,7 +322,7 @@ public class DateService {
 		return new SharedPlanView(sharerName, partnerName, plan.getPlaceName(), point, plan.getStartsAt(),
 				plan.getEndsAt(), plan.getStatus(), position, sharer.getCheckedInAt(),
 				sharer.hasOpenEscalation() ? sharer.getEscalationReason() : null, sharer.getHomeSafeAt() != null,
-				settings.emergencyNumber());
+				emergencyFor(sharer.getUserId()));
 	}
 
 	// ---- check-ins and help -------------------------------------------------------------------------
@@ -344,12 +344,12 @@ public class DateService {
 		DatePlan plan = requireMember(userId, dateId);
 		DateParticipant me = participant(plan, userId);
 		if (needHelp) {
-			return new CheckInView(false, escalate(plan, me, EscalationReason.HELP_REQUESTED), settings.emergencyNumber(),
+			return new CheckInView(false, escalate(plan, me, EscalationReason.HELP_REQUESTED), emergencyFor(userId),
 					"Help is on the way to your trusted contact. If you're in danger, call "
-							+ settings.emergencyNumber() + " now.");
+							+ emergencyFor(userId) + " now.");
 		}
 		me.checkedIn(clock.instant());
-		return new CheckInView(true, false, settings.emergencyNumber(), "Glad it's going well. Enjoy!");
+		return new CheckInView(true, false, emergencyFor(userId), "Glad it's going well. Enjoy!");
 	}
 
 	/**
@@ -360,11 +360,11 @@ public class DateService {
 	public CheckInView sos(String userId, String dateId) {
 		DatePlan plan = requireMember(userId, dateId);
 		if (!plan.inCareWindow(clock.instant(), settings.locationLead(), settings.afterCareWindow())) {
-			throw ApiException.conflict("OUTSIDE_TIME_BOX", "Call " + settings.emergencyNumber() + " if you need help");
+			throw ApiException.conflict("OUTSIDE_TIME_BOX", "Call " + emergencyFor(userId) + " if you need help");
 		}
 		boolean alerted = escalate(plan, participant(plan, userId), EscalationReason.SOS);
-		return new CheckInView(false, alerted, settings.emergencyNumber(),
-				"Call " + settings.emergencyNumber() + " now if you're in danger. We've alerted your trusted contact"
+		return new CheckInView(false, alerted, emergencyFor(userId),
+				"Call " + emergencyFor(userId) + " now if you're in danger. We've alerted your trusted contact"
 						+ " and our safety team.");
 	}
 
@@ -640,7 +640,12 @@ public class DateService {
 		return new DateView(plan.getId(), plan.getConnectionId(),
 				profiles.find(partnerId).map(Profile::firstName).orElse(null), plan.getPlaceName(), point,
 				plan.getStartsAt(), plan.getEndsAt(), status, plan.getProposerId().equals(userId), window, you,
-				them != null && them.isShareLocation() && window, partnerPosition, settings.emergencyNumber());
+				them != null && them.isShareLocation() && window, partnerPosition, emergencyFor(userId));
+	}
+
+	/** The emergency number for the person's country (global from day one; India: 112). */
+	private String emergencyFor(String userId) {
+		return profiles.find(userId).map(Profile::emergencyNumber).orElse(settings.emergencyNumber());
 	}
 
 	private String shareUrl(String token) {
