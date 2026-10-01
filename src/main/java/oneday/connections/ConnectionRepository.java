@@ -1,6 +1,7 @@
 package oneday.connections;
 
 import java.time.Instant;
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 
@@ -18,6 +19,11 @@ public interface ConnectionRepository extends JpaRepository<Connection, String> 
 
 	@Query("select c from Connection c where c.userA = :userId or c.userB = :userId")
 	List<Connection> findByMember(@Param("userId") String userId);
+
+	/** Everyone among {@code userIds} who is in an active couple. */
+	@Query("select c from Connection c where c.state = oneday.connections.Connection.State.ACTIVE "
+			+ "and c.coupleA = true and c.coupleB = true and (c.userA in :userIds or c.userB in :userIds)")
+	List<Connection> findCouplesAmong(@Param("userIds") Collection<String> userIds);
 
 	@Query("select count(c) from Connection c where (c.userA = :userId or c.userB = :userId) "
 			+ "and c.state = oneday.connections.Connection.State.ACTIVE and c.createdAt > :since")

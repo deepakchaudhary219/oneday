@@ -7,12 +7,15 @@ import java.util.Map;
 import oneday.chat.ChatService;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionService;
+import oneday.dates.DateService;
+import oneday.events.EventOperations;
 import oneday.geo.LocationService;
 import oneday.grievance.GrievanceService;
 import oneday.identity.AccountAdministration;
 import oneday.identity.AuthService;
 import oneday.identity.User;
 import oneday.identity.UserGuard;
+import oneday.ledger.LedgerService;
 import oneday.media.MediaService;
 import oneday.moments.MomentService;
 import oneday.notify.NotificationService;
@@ -66,11 +69,20 @@ public class PrivacyService {
 
 	private final GrievanceService grievances;
 
+	private final LedgerService ledger;
+
+	private final EventOperations events;
+
+	private final DateService dates;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
 			AccountAdministration administration, NotificationService notifications, SessionService sessions,
-			GrievanceService grievances) {
+			GrievanceService grievances, LedgerService ledger, EventOperations events, DateService dates) {
+		this.dates = dates;
+		this.ledger = ledger;
+		this.events = events;
 		this.guard = guard;
 		this.accounts = accounts;
 		this.profiles = profiles;
@@ -143,6 +155,11 @@ public class PrivacyService {
 					g.getDescription(), "status", g.getStatus(), "filedAt", g.getCreatedAt(), "response",
 					g.getResponse()))
 			.toList());
+		data.put("datePlans", dates.export(userId));
+		data.put("realValueLedger", ledger.allFor(userId)
+			.stream()
+			.map(e -> row("outcome", e.getKind(), "at", e.getOccurredAt()))
+			.toList());
 		data.put("verificationAttempts", verification.attemptsBy(userId)
 			.stream()
 			.map(a -> row("outcome", a.getOutcome(), "at", a.getCreatedAt()))
@@ -164,6 +181,7 @@ public class PrivacyService {
 			administration.deactivateForErasure(userId);
 			locations.forget(userId);
 			connections.endAllFor(userId);
+			dates.cancelAllFor(userId);
 			return;
 		}
 		eraseNow(userId);
@@ -186,6 +204,7 @@ public class PrivacyService {
 	 */
 	private void eraseNow(String userId) {
 		List<Connection> all = connections.all(userId);
+		dates.forget(userId);
 		chat.deleteForConnections(all.stream().map(Connection::getId).toList());
 		connections.deleteAll(all);
 		signals.deleteInvolving(userId);
@@ -198,6 +217,8 @@ public class PrivacyService {
 		notifications.forget(userId);
 		sessions.forget(userId);
 		grievances.forget(userId);
+		ledger.forget(userId);
+		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
 	}

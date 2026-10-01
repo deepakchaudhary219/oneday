@@ -1,6 +1,7 @@
 package oneday.support;
 
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
@@ -13,6 +14,6 @@ public class TestClockConfig {
 	@Bean
 	@Primary
 	MutableClock testClock() {
-		return new MutableClock(Instant.now());
+		return new MutableClock(Instant.now().truncatedTo(ChronoUnit.MICROS));
 	}
 }

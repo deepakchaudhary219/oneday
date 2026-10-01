@@ -23,7 +23,7 @@ live story ─► nearby Constellation (Layer 0) ─► Signal (Layer 1, budgete
           ─► Friend-Mode chat ─► private Mutual Spark ─► (block / soft exit at any point)
 ```
 
-Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `identity`, `verification`, `profile`, `geo`, `moments`, `media`, `discovery`, `signals`, `connections`, `chat`, `safety`, `staff`, `pulse`, `privacy`.
+Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `identity`, `verification`, `profile`, `geo`, `moments`, `media`, `discovery`, `signals`, `connections`, `chat`, `safety`, `staff`, `pulse`, `privacy`, plus `events` (outbox), `dates` (Date Mode) and `ledger` (Real Value Ledger).
 
 **Milestone 2 so far:**
 - Redis-shared rate limits.
@@ -36,8 +36,16 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
 - Sign-in sessions: 15-minute access tokens, rotating refresh tokens with replay detection, and signing out of one or all devices.
 - Grievance redressal to the Grievance Officer (IT Rules 3(2), DPDP), including appeals from suspended accounts.
 - Observability: request ids on every response and log line, and Prometheus metrics with alertable backlog gauges.
+- Domain events through a **transactional outbox**, with idempotent consumers (inbox), lease-based relaying across replicas, retries with backoff and a dead-letter queue for staff.
 
-See [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) §7.
+**Milestone 4 (dating-ready v1.5) so far:**
+- **Date Mode:** plans between Connections, exact location that is time-boxed and needs both people's consent, a trusted contact with a private live link, "Going OK?" check-ins that escalate, one-tap SOS (112), "home safe" end-of-date confirmation, and a Trust & Safety alert desk.
+- **Safety-Verified Meeting Points**, curated by staff.
+- **Mutual Debrief:** only the positive answers both people gave are revealed, and the safety answers stay private.
+- **Couple Mode:** confirmed privately, and switched on only when both confirm; it pauses Discovery for both people.
+- **Real Value Ledger:** a private monthly summary of real outcomes, built as an event-driven read model.
+
+See [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) §7–§8.
 
 ### Run locally
 
@@ -71,6 +79,7 @@ Any other deployment **must** set:
 | `ONEDAY_SMS_PROVIDER` | SMS adapter for phone login (`none` disables it). India needs a TRAI DLT-registered sender. |
 | `ONEDAY_GRIEVANCE_OFFICER_NAME` / `_EMAIL` / `_ADDRESS` | The Grievance Officer's published contact (IT Rules 3(2), DPDP), served at `GET /grievances/officer`. Required before launch. |
 | `MANAGEMENT_SERVER_PORT` | An internal-only port (e.g. `8081`) for health probes and Prometheus scraping (`/actuator/prometheus`, token-free only there). Without it, metrics need an admin token. |
+| `ONEDAY_PUBLIC_URL` | Public HTTPS base of the API, used in the private link texted to a Date Mode trusted contact (`/date-share/…`) |
 | `ONEDAY_API_DOCS` | `true` publishes `/v3/api-docs` and Swagger UI. Off by default outside the `dev` profile. |
 | `ONEDAY_BOOTSTRAP_ADMIN_IDS` | Comma-separated **user ids** that act as the first Trust & Safety admins. Take the id from the `sub` of your own token. Ids, not emails: emails aren't ownership-verified yet. |
 
@@ -156,6 +165,25 @@ curl -s -X POST $B/auth/logout-all -H "Authorization: Bearer $ASHA"             
 curl -s $B/grievances/officer | jq
 curl -s $B/grievances -H "Authorization: Bearer $RAVI" -H 'Content-Type: application/json' \
   -d '{"category":"ACCOUNT_ACTION","description":"Please review my suspension."}' | jq  # reference + deadline
+```
+
+### Date Mode (dev profile)
+
+```bash
+# Continue from the core loop above: $ASHA and $RAVI are connected. Get the connection id.
+CID=$(curl -s $B/connections -H "Authorization: Bearer $RAVI" | jq -r '.[0].id')
+START=$(date -u -d '+20 min' +%FT%TZ); END=$(date -u -d '+3 hour' +%FT%TZ)
+D=$(curl -s $B/dates -H "Authorization: Bearer $RAVI" -H 'Content-Type: application/json' \
+  -d "{\"connectionId\":\"$CID\",\"placeName\":\"Third Wave Coffee, Koramangala\",\"startsAt\":\"$START\",\"endsAt\":\"$END\"}" | jq -r .id)
+curl -s -X POST $B/dates/$D/accept -H "Authorization: Bearer $ASHA" | jq .status              # CONFIRMED
+# Exact location flows only while BOTH share, and only inside the time box (from 30 min before the start).
+for T in $ASHA $RAVI; do curl -s -X PUT $B/dates/$D/sharing -H "Authorization: Bearer $T" -H 'Content-Type: application/json' -d '{"enabled":true}' >/dev/null; done
+curl -s -X PUT $B/dates/$D/location -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' -d '{"lat":12.9345,"lon":77.6260}' | jq
+# A trusted contact gets a private link (the dev SMS sender prints it in the log). No account needed to open it.
+curl -s -X PUT $B/dates/$D/trusted-contact -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' -d '{"name":"Meera","phone":"98765 43210"}' | jq
+curl -s -X POST $B/dates/$D/sos -H "Authorization: Bearer $ASHA" | jq                       # 112 + alert, never shown to Ravi
+curl -s -X POST $B/dates/$D/end -H "Authorization: Bearer $ASHA" | jq .status                # "home safe": location stops
+curl -s $B/ledger -H "Authorization: Bearer $ASHA" | jq                                       # private Real Value Ledger
 ```
 
 ### Phone login (dev profile)

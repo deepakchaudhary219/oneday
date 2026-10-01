@@ -9,6 +9,8 @@ import oneday.common.ApiException;
 import oneday.common.ProductMetrics;
 import oneday.config.OneDayProperties;
 import oneday.connections.ConnectionService;
+import oneday.events.DomainEvent;
+import oneday.events.EventPublisher;
 import oneday.geo.GeoCell;
 import oneday.geo.GeoMath;
 import oneday.geo.LocationService;
@@ -46,12 +48,15 @@ public class MomentService {
 
 	private final ProductMetrics metrics;
 
+	private final EventPublisher events;
+
 	private final OneDayProperties.Moments settings;
 
 	public MomentService(MomentRepository moments, LocationService locations, ProfileService profiles,
 			ConnectionService connections, UserGuard guard, BlockChecker blocks, MediaService media, Clock clock,
-			OneDayProperties properties, ProductMetrics metrics) {
+			OneDayProperties properties, ProductMetrics metrics, EventPublisher events) {
 		this.metrics = metrics;
+		this.events = events;
 		this.moments = moments;
 		this.locations = locations;
 		this.profiles = profiles;
@@ -98,6 +103,8 @@ public class MomentService {
 				request.isPreviewAllowed(), request.shareScope(), isText || request.isCapturedLive(), cell, now,
 				now.plus(settings.ttl())));
 		metrics.momentPublished(moment.getKind());
+		events.publish(new DomainEvent.MomentPublished(moment.getId(), userId, moment.getKind().name(),
+				moment.getShareScope().name()));
 		return full(moment, profiles.require(userId).firstName());
 	}
 

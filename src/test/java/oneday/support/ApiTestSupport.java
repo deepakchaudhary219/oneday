@@ -17,6 +17,8 @@ import java.util.UUID;
 
 import com.jayway.jsonpath.JsonPath;
 
+import oneday.events.OutboxRelay;
+
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,7 +47,8 @@ public abstract class ApiTestSupport {
 
 	protected static final double BLR_LON = 77.6245;
 
-	private static final List<String> TABLES = List.of("grievances", "sessions", "notices", "pulse_deliveries", "devices", "staff_actions", "staff_members", "messages", "conversations", "connections", "signals",
+	private static final List<String> TABLES = List.of("processed_events", "outbox_events", "ledger_entries", "date_participants", "date_plans",
+			"meeting_points", "grievances", "sessions", "notices", "pulse_deliveries", "devices", "staff_actions", "staff_members", "messages", "conversations", "connections", "signals",
 			"moments", "media_uploads", "user_locations", "blocks", "reports", "verification_attempts", "otp_challenges", "profiles", "users");
 
 	protected static final String PASSWORD = "correct-horse-battery";
@@ -61,6 +64,9 @@ public abstract class ApiTestSupport {
 
 	@Autowired
 	protected JdbcTemplate jdbc;
+
+	@Autowired
+	protected OutboxRelay relay;
 
 	@BeforeEach
 	void cleanDatabase() {
@@ -198,6 +204,31 @@ public abstract class ApiTestSupport {
 			.getResponse()
 			.getContentAsString();
 		return JsonPath.read(response, "$.id");
+	}
+
+	/**
+	 * The core loop in one call: {@code first} posts, {@code second} signals, {@code first} reveals. Both must
+	 * be verified. Returns the new connection id.
+	 */
+	protected String connect(String first, String second) throws Exception {
+		locate(first, BLR_LAT, BLR_LON);
+		locate(second, BLR_LAT, BLR_LON);
+		String signalId = sendSignal(second, postPublicMoment(first, "trek"), "trek");
+		return JsonPath.read(body(postAs(first, "/signals/" + signalId + "/reveal", null).andExpect(status().isOk())),
+				"$.connectionId");
+	}
+
+	/** Both people turn on the Dating Lens and spark: a Mutual Spark. */
+	protected void mutualSpark(String first, String second, String connectionId) throws Exception {
+		updateProfile(first, "{\"datingLens\":true}");
+		updateProfile(second, "{\"datingLens\":true}");
+		postAs(first, "/connections/" + connectionId + "/spark", null).andExpect(status().isOk());
+		postAs(second, "/connections/" + connectionId + "/spark", null).andExpect(status().isOk());
+	}
+
+	/** Delivers every committed domain event to its consumers, as the background relay would. */
+	protected int deliverEvents() {
+		return relay.drain();
 	}
 
 	protected String body(ResultActions result) throws Exception {

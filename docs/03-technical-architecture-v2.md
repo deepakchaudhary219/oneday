@@ -38,6 +38,9 @@ Each package maps 1:1 to a service in the v1 catalog. Packages talk to each othe
 | `safety` | Trust & Safety | Block (propagating), reports with priority routing |
 | `pulse` | Notification (digest side) | Local Pulse: capped counts, k-anon nearby activity, discretion copy |
 | `privacy` | *(new, DPDP)* | Self-service export and erasure |
+| `events` | *(new)* | Transactional outbox, relay, idempotent consumers, dead-letter queue (§1.4) |
+| `dates` | *(new, v1.5)* | Date Mode: plans, time-boxed exact location, trusted contact, check-ins, SOS, Mutual Debrief, Meeting Points |
+| `ledger` | *(new)* | Real Value Ledger, a private read model built from events |
 
 ### 1.2 Runtime (v1)
 
@@ -64,6 +67,20 @@ One container image (`Dockerfile`: JRE 25 + ffmpeg, non-root) runs everything. `
 | **OpenSearch** | Discovery p95 > 150 ms at pilot density, or text search is needed | `moments_active` geo index (v1 doc §5.3) |
 | **ClickHouse** | Analytics queries start to affect the OLTP database | Real Connection Index, experiments |
 | **Kubernetes** | More than one deployable service exists | — |
+
+### 1.4 Domain events: transactional outbox
+
+Modules publish facts (`MomentPublished`, `SignalSent`, `MutualRevealed`, `MutualSparked`, `CoupleFormed`, `UserBlocked`, `DateConfirmed`, `DateCompleted`, `DateSafetyEscalated`; the catalogue is one sealed interface, `DomainEvent`) through `EventPublisher`, which writes to `outbox_events` **in the caller's transaction** (`Propagation.MANDATORY`). An event therefore exists if and only if its state change committed: there is no dual write.
+
+- **Relay:** every replica runs `OutboxRelay`. It claims due events with a conditional `UPDATE` lease (portable to H2 and MySQL, no `SKIP LOCKED`), delivers them, then marks them `DISPATCHED`. If a relay dies, its lease simply runs out.
+- **Consumers:** they are idempotent. `InProcessEventTransport` runs each `DomainEventHandler` in its own transaction together with an inbox row (`processed_events`, primary key `(handler, event_id)`). A retry after a partial failure re-runs only the consumers that failed.
+- **Failures:** they back off exponentially. After `max-attempts` the event is parked as `DEAD`; admins list and requeue it at `/staff/events`. Gauges: `oneday_outbox_pending`, `oneday_outbox_dead`, `oneday_outbox_lag_seconds`.
+- **Kafka later:** it replaces `EventTransport`, and neither the publishers nor the outbox change. Delivery is at least once and not ordered across aggregates, and `aggregateId` is the future partition key.
+- **Current consumers:**
+  - the Real Value Ledger projection;
+  - the trusted-contact alert on `DateSafetyEscalated`, so the text is sent only if the escalation committed, and is retried if sending fails;
+  - cancelling open plans on `UserBlocked`.
+- **Erasure:** removes every event that mentions the account (`user_ids`).
 
 ---
 
@@ -118,6 +135,17 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `POST /devices` · `POST /devices/unregister` | | Push-token registration (≤ 5 per account, tokens never echoed back) |
 | `GET /notices` · `POST /notices/{id}/read` | | In-app notices: warnings, report outcomes, security events, grievance updates |
 | `POST /grievances` · `GET /grievances` · `GET /grievances/officer` (public) | | Complaints and appeals to the Grievance Officer, suspended accounts included. The reference and deadline are the acknowledgement. |
+| `POST /connections/{id}/couple` (**V**) · `DELETE` | | Couple Mode: private until both confirm (needs a Mutual Spark); then Discovery pauses for both |
+| `POST /dates` (**V**) · `GET /dates` · `GET /dates/{id}` | | Date Mode plans between Connections (Meeting Point or named public place, time box 30 min–8 h) |
+| `POST /dates/{id}/accept` (**V**) · `/decline` · `/cancel` · `/end` | | Confirm (invited person only), decline, cancel, and the "home safe" end-of-date confirmation |
+| `PUT /dates/{id}/sharing` · `PUT /dates/{id}/location` | | Exact location: per-person consent; it flows only while both share and inside the time box |
+| `PUT/DELETE /dates/{id}/trusted-contact` · `GET /date-share/{token}` (public) | | The trusted contact's private link, which follows only the sharer's side of the plan |
+| `PUT /dates/{id}/check-in-time` · `POST /dates/{id}/check-in` · `POST /dates/{id}/sos` | | "Going OK?", "I need help" and one-tap SOS. Returns `112`. The other person is never told. |
+| `POST/GET /dates/{id}/debrief` | | Mutual Debrief: only positive answers both gave are revealed; safety answers never are |
+| `GET /meeting-points?category=&radiusKm=` | | Safety-Verified Meeting Points near the caller's cell |
+| `GET /ledger?month=` | | The caller's private Real Value Ledger |
+| `GET /staff/date-alerts` · `POST /staff/date-alerts/{dateId}/{userId}/resolve` · `POST/DELETE /staff/meeting-points` | *moderator* | Date Mode alert desk (reads audited) and Meeting Point curation |
+| `GET /staff/events/dead` · `POST /staff/events/{id}/requeue` | *admin* | Outbox dead-letter queue |
 | `GET /staff/verification-queue` · `POST /staff/verification/{userId}/decision` | *moderator* | Manual review: `APPROVE`, `RETRY`, or `REJECT` (also suspends the account) |
 | `GET /staff/reports` · `POST /staff/reports/{id}/claim` · `POST /staff/reports/{id}/resolve` | *moderator* | Queue ordered by priority then age, with SLA `dueAt` and `overdue`. Resolve with `DISMISS`, `WARN` or `SUSPEND_USER`. The warned user and the reporter get notices. |
 | `GET /staff/grievances` · `POST /staff/grievances/{id}/answer` | *moderator* | Grievances by deadline with overdue flags. The answer (`UPHELD` / `PARTLY_UPHELD` / `NOT_UPHELD` plus a written response) is audited and tells the complainant where to escalate. |
@@ -179,7 +207,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V9`)
+## 6. Data model (Flyway `V1`–`V13`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -200,6 +228,10 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `devices` · `pulse_deliveries` · `notices` (V7), `profiles.time_zone` | push tokens; one claim row per (user, local date); notices | The claim row's primary key makes the daily pulse idempotent across replicas |
 | `sessions` (V8) | `user_id`, `refresh_hash`, `previous_hash`, `rotated_at`, `device`, `last_used_at`, `expires_at`, `ended_at`, `end_reason` | Hashes only, never a usable secret. Ended rows are purged after 30 days. |
 | `grievances` (V9) | `reference` UQ, `user_id`, `category`, `description`, `status`, `resolve_by`, `outcome`, `response`, `resolved_by` | `resolve_by` is set from the category's legal deadline when the grievance is filed |
+| `outbox_events` · `processed_events` (V10) | `event_type`, `schema_version`, `aggregate_id`, `user_ids`, `payload`, `status`, `attempts`, `next_attempt_at`, `locked_by`, `locked_until` · PK(`handler`, `event_id`) | Outbox and inbox. Delivered rows and inbox rows are purged after 7 days. |
+| `connections` couple columns (V11) | `couple_a`, `couple_b`, `couple_since` | Private per side, like spark flags |
+| `ledger_entries` (V12) | `user_id`, `kind`, `occurred_at`, UQ(`user_id`, `kind`, `source_event_id`) | Read model; the unique key keeps the projection exactly-once |
+| `meeting_points` · `date_plans` · `date_participants` (V13) | venue + coordinates · plan state machine with `row_version` · per-person consent, current point, check-in, escalation, trusted contact, token hash, debrief | Positions, contacts and tokens are purged 2 h after a plan closes (an open escalation keeps them up to 7 days) |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 
 ---
@@ -231,6 +263,7 @@ PENDING ──reveal──► REVEALED  (Connection + Conversation created atomi
 | DPDP: Consent Managers (registration opens 13 Nov 2026) | A consent API that accepts and honours consent artefacts | M3 |
 | IT Rules: grievance officer, takedown SLAs (some 2–3 h) | Staff console: priority queue with due times (P0 2 h) and overdue flags, suspension, append-only audit trail ✅. Grievances (rule 3(2)): published officer contact, acknowledgement on filing, 24 h for intimate imagery, 72 h for content removal and 15 days otherwise, appeals from suspended accounts, and escalation to the Grievance Appellate Committee ✅. On-call rota still to come. | M2 ✅ |
 | Photo metadata (location in EXIF, MP4 location atoms) | The media worker re-encodes every upload without metadata before anything is served. Tests plant a GPS-like secret and assert it is gone. | M2 ✅ |
+| Date Mode exact location (the most sensitive data in the product) | Mutual consent per plan, inside the time box only, one overwritten point per person, stopped at plan close, purged after the after-care window. Never logged. A trusted contact sees only the sharer's side, through a hashed, expiring token. | M4 ✅ |
 | Evidence retention vs. erasure (POCSO; IT Rules 2021 Rule 3(1)(g), 180 days) | Erasure is deferred while an open P0 report exists or within 180 days of an enforcement action. The account is hidden and its identifiers released at once, with no tip-off, and it is erased automatically when the hold lifts. | M2 ✅ |
 | IT Rules 2026 SGI labelling | Live-capture-only Discovery Mode. Labelled lenses in Friend Mode. SGI declaration for any future upload path. | M1 (capture flag) / M2 (client attestation) |
 | POCSO mandatory reporting | Evidence-preservation hold on P0 reports, counsel-designed reporting SOP | Before public launch |

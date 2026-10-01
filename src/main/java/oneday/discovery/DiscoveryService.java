@@ -93,6 +93,10 @@ public class DiscoveryService {
 		if (page < 0 || page >= settings.maxPagesPerSession()) {
 			return caughtUp(scope, page);
 		}
+		if (!connections.inCouple(List.of(viewerId)).isEmpty()) {
+			return new Constellation(scope, page, List.of(), true,
+					"Couple Mode is on, so Discovery is paused. Switch it off any time in your connection.");
+		}
 		Profile viewer = profiles.require(viewerId);
 		if (scope == DiscoveryScope.ROOTS && viewer.getHomeRegion() == null) {
 			throw ApiException.conflict("HOME_REGION_REQUIRED", "Add your home region to meet people from home");
@@ -118,7 +122,8 @@ public class DiscoveryService {
 				latestByOwner.putIfAbsent(m.getOwnerId(), m);
 			}
 		}
-		Set<String> reachable = guard.reachableAmong(latestByOwner.keySet());
+		Set<String> reachable = new HashSet<>(guard.reachableAmong(latestByOwner.keySet()));
+		reachable.removeAll(connections.inCouple(reachable));
 		Map<String, GeoCell> ownerCells = locations.currentCells(reachable);
 
 		List<Candidate> candidates = new ArrayList<>();
