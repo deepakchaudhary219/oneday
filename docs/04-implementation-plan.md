@@ -180,3 +180,31 @@ Where `redis-server` or `ffmpeg` is missing, those tests skip automatically. The
 | **Real Value Ledger:** a private monthly read model built from `MutualRevealed`, `MutualSparked`, `DateCompleted` and `CoupleFormed` events (including Roots connections), plus "conversations that went somewhere". No ranks or comparisons. Included in export and removed on erasure. | `ledger`, `chat` | ✅ |
 
 Data retention: trusted-contact details, share links and positions are purged 2 h after a plan closes. The exception is an unresolved safety escalation, which keeps its evidence until staff resolve it, and never for more than 7 days.
+
+## 9. Engagement layer: delivered
+
+Specified in `05-engagement-psychology.md`. All of it is subject to that document's guardrails.
+
+| Capability | Where | Status |
+|---|---|---|
+| **Story Map:** public stories by capture place in adaptive k-anonymous clusters (neighbourhood ≥ 3 people → area ≥ 2 → unplaced shelf; Safe Zones never placed). Lenses: radius, city, Roots, language, activity and Today's Prompt. Vibe, live-now glow, "N from your home region" and relay threads. Rate limited; paused in Couple Mode. | `discovery` | ✅ |
+| **Today's Prompt:** per local date; staff-scheduled global or Roots prompts with a 30-prompt catalogue fallback; answers are moments with a `promptKey`; give-to-get unlock needs a public answer; truthful capped teaser | `prompts`, `moments` | ✅ |
+| **Story Relays:** public reply-stories, one per person per relay, capped at 30, per-viewer visibility (blocks, paused location, Couple Mode), threads on the map, relay answers in the Local Pulse | `moments`, `discovery`, `pulse` | ✅ |
+| **Connection Warmth:** levels from mutual days over 14 days, kind "quiet" state, starters from shared activities, roots and values | `connections`, `chat` | ✅ |
+| **Global safety numbers:** profile country (ISO 3166-1) → emergency number on Date Mode, the trusted contact's page and texts | `profile`, `dates` | ✅ |
+
+**Verification:** 103 automated tests pass on H2 and MySQL 8.0, with the two ffmpeg tests skipped in this environment. The new tests cover:
+- that the map never places a lone person or a Safe-Zone story, and that it re-clusters after a block;
+- the Roots lens never going below area level;
+- the prompt staying locked after a friends-only answer;
+- relay rules and per-viewer visibility;
+- warmth never mentioning loss or streaks;
+- per-country emergency numbers.
+
+**Next (ordered):**
+1. Festival Seasons (an automatic Roots prompt calendar).
+2. A time-well-spent survey and WMA dashboards (`05` §5).
+3. Right Now (behind Gate 2).
+4. Plans & Rooms.
+5. Memory Trail.
+6. Weekly Recap.
