@@ -5,9 +5,11 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Base64;
 import java.util.Map;
 
 import oneday.integrations.GoogleServiceAccount;
@@ -24,8 +26,13 @@ import org.springframework.stereotype.Component;
 /**
  * Google Play Integrity ({@code oneday.attestation.provider=play-integrity}): the server decodes the app's
  * integrity token with Google and accepts it only if the request names our package, the app is the one Play
- * recognises, the device meets basic device integrity, and the token is fresh. iOS (App Attest) is the next
- * adapter behind the same port.
+ * recognises, the device meets basic device integrity, the token is fresh, and it was minted for this request.
+ *
+ * <p>
+ * Binding (Google's standard-request {@code requestHash}): the app gets a challenge from
+ * {@code POST /attestation/challenges}, requests a token with {@code requestHash = base64url(SHA256(challenge +
+ * "|" + action))}, and sends {@code X-Device-Integrity: play.<challenge>.<token>}. The challenge is single-use,
+ * so a token works once, for one action.
  */
 @Component
 @ConditionalOnProperty(name = "oneday.attestation.provider", havingValue = "play-integrity")
@@ -34,6 +41,8 @@ class PlayIntegrityAttestor implements DeviceAttestor {
 	static final String SCOPE = "https://www.googleapis.com/auth/playintegrity";
 
 	static final Duration MAX_AGE = Duration.ofMinutes(5);
+
+	static final String PREFIX = "play.";
 
 	private static final Logger log = LoggerFactory.getLogger(PlayIntegrityAttestor.class);
 
@@ -49,9 +58,13 @@ class PlayIntegrityAttestor implements DeviceAttestor {
 
 	private final String endpoint;
 
+	private final AttestationChallenges challenges;
+
 	PlayIntegrityAttestor(GoogleServiceAccount google, HttpClient vendorHttpClient, JsonMapper json, Clock clock,
 			@Value("${oneday.attestation.android-package}") String packageName,
-			@Value("${oneday.attestation.play-endpoint:https://playintegrity.googleapis.com}") String endpoint) {
+			@Value("${oneday.attestation.play-endpoint:https://playintegrity.googleapis.com}") String endpoint,
+			AttestationChallenges challenges) {
+		this.challenges = challenges;
 		this.google = google;
 		this.http = vendorHttpClient;
 		this.json = json;
@@ -61,7 +74,20 @@ class PlayIntegrityAttestor implements DeviceAttestor {
 	}
 
 	@Override
-	public Verdict verify(String token, String action) {
+	public boolean handles(String token) {
+		return token.startsWith(PREFIX);
+	}
+
+	@Override
+	public Verdict verify(String header, String action) {
+		String[] parts = header.split("\\.", 3); // the token itself is a JWE with dots of its own
+		if (parts.length != 3 || !challenges.consume(parts[1])) {
+			return Verdict.FAILED;
+		}
+		String token = parts[2];
+		String expectedHash = Base64.getUrlEncoder()
+			.withoutPadding()
+			.encodeToString(AppAttestVerifier.sha256((parts[1] + "|" + action).getBytes(StandardCharsets.UTF_8)));
 		try {
 			HttpResponse<String> response = http.send(HttpRequest
 				.newBuilder(URI.create(endpoint + "/v1/" + packageName + ":decodeIntegrityToken"))
@@ -84,7 +110,8 @@ class PlayIntegrityAttestor implements DeviceAttestor {
 			long millis = payload.path("requestDetails").path("timestampMillis").asLong(0);
 			boolean fresh = millis > 0 && Duration.between(Instant.ofEpochMilli(millis), clock.instant()).abs()
 				.compareTo(MAX_AGE) <= 0;
-			return rightApp && device && fresh ? Verdict.TRUSTED : Verdict.FAILED;
+			boolean bound = expectedHash.equals(payload.path("requestDetails").path("requestHash").asString());
+			return rightApp && device && fresh && bound ? Verdict.TRUSTED : Verdict.FAILED;
 		}
 		catch (IOException ex) {
 			throw new IllegalStateException("Play Integrity unreachable", ex);
