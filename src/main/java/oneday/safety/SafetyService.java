@@ -3,9 +3,10 @@ package oneday.safety;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
-import java.util.stream.Stream;
 
 import oneday.common.ApiException;
 import oneday.common.ProductMetrics;
@@ -47,9 +48,13 @@ public class SafetyService {
 
 	private final SafetyProperties safetyProperties;
 
+	private final List<SafetyTargetResolver> resolvers;
+
 	public SafetyService(BlockRepository blocks, ReportRepository reports, MomentService moments,
 			SignalService signals, ConnectionService connections, UserGuard guard, Clock clock,
-			SafetyProperties safetyProperties, ProductMetrics metrics, EventPublisher events) {
+			SafetyProperties safetyProperties, ProductMetrics metrics, EventPublisher events,
+			List<SafetyTargetResolver> resolvers) {
+		this.resolvers = List.copyOf(resolvers);
 		this.metrics = metrics;
 		this.events = events;
 		this.blocks = blocks;
@@ -168,35 +173,48 @@ public class SafetyService {
 	}
 
 	private String resolve(String userId, SafetyTarget target) {
-		long provided = Stream.of(target.momentId(), target.signalId(), target.connectionId())
-			.filter(v -> v != null && !v.isBlank())
-			.count();
-		if (provided != 1) {
-			throw ApiException.badRequest("TARGET_REQUIRED", "Specify exactly one of momentId, signalId, connectionId");
-		}
-		String other;
-		if (target.momentId() != null) {
-			other = moments.find(target.momentId())
-				.map(Moment::getOwnerId)
-				.orElseThrow(() -> ApiException.notFound("Moment"));
-		}
-		else if (target.signalId() != null) {
-			other = signals.counterpartOf(target.signalId(), userId);
-		}
-		else {
-			other = connections.requireMember(target.connectionId(), userId).otherThan(userId);
-		}
+		String other = switch (target.type()) {
+			case "MOMENT" -> moments.find(target.id()).map(Moment::getOwnerId).orElseThrow(() -> ApiException.notFound("Moment"));
+			case "SIGNAL" -> signals.counterpartOf(target.id(), userId);
+			case "CONNECTION" -> connections.requireMember(target.id(), userId).otherThan(userId);
+			default -> resolvers.stream()
+				.filter(r -> r.type().equals(target.type()))
+				.findFirst()
+				.flatMap(r -> r.personBehind(userId, target.id()))
+				.orElseThrow(() -> ApiException.notFound("Target"));
+		};
 		if (other.equals(userId)) {
 			throw ApiException.unprocessable("CANNOT_TARGET_SELF", "You can't block or report yourself");
 		}
 		return other;
 	}
 
-	public record SafetyTarget(String momentId, String signalId, String connectionId) {
+	/** The request fields that can name a target: the core three plus every registered resolver's. */
+	public Map<String, String> targetFields() {
+		Map<String, String> fields = new LinkedHashMap<>();
+		fields.put("momentId", "MOMENT");
+		fields.put("signalId", "SIGNAL");
+		fields.put("connectionId", "CONNECTION");
+		resolvers.forEach(r -> fields.put(r.field(), r.type()));
+		return fields;
+	}
 
-		String type() {
-			return momentId != null ? "MOMENT" : signalId != null ? "SIGNAL" : "CONNECTION";
+	/** Builds the target from a request body: exactly one known id field must be present. */
+	public SafetyTarget targetFrom(Map<String, Object> body) {
+		Map<String, String> fields = targetFields();
+		List<SafetyTarget> found = fields.entrySet()
+			.stream()
+			.filter(f -> body.get(f.getKey()) instanceof String v && !v.isBlank())
+			.map(f -> new SafetyTarget(f.getValue(), ((String) body.get(f.getKey())).trim()))
+			.toList();
+		if (found.size() != 1) {
+			throw ApiException.badRequest("TARGET_REQUIRED", "Specify exactly one of " + String.join(", ", fields.keySet()));
 		}
+		return found.get(0);
+	}
+
+	/** What is being blocked or reported: a type (MOMENT, PLAN, ...) and the id the viewer saw. */
+	public record SafetyTarget(String type, String id) {
 	}
 
 	public record ReportReceipt(String reportId, String status, String message) {

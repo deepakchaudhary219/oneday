@@ -44,6 +44,10 @@ public class PlanMessage {
 		return id;
 	}
 
+	public String getPlanId() {
+		return planId;
+	}
+
 	public String getSenderId() {
 		return senderId;
 	}

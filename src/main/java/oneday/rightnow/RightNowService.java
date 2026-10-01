@@ -252,6 +252,12 @@ public class RightNowService {
 		pendingJoinFor(userId, joinId).resolve(RightNowJoin.Status.DECLINED);
 	}
 
+	/** The person behind a Right Now session (for block and report). */
+	@Transactional(readOnly = true)
+	public Optional<String> ownerOf(String sessionId) {
+		return sessions.findById(sessionId).map(RightNowSession::getUserId);
+	}
+
 	@Transactional
 	public void forget(String userId) {
 		List<String> mine = sessions.findByUserId(userId).stream().map(RightNowSession::getId).toList();

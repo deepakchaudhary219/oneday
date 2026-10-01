@@ -514,6 +514,12 @@ public class DateService {
 			.forEach(p -> close(p, DatePlan.Status.CANCELLED));
 	}
 
+	/** The other person on a plan the viewer is part of (for block and report). */
+	@Transactional(readOnly = true)
+	public Optional<String> partnerOf(String viewerId, String dateId) {
+		return plans.findById(dateId).filter(p -> p.involves(viewerId)).map(p -> p.otherThan(viewerId));
+	}
+
 	// ---- Trust & Safety ------------------------------------------------------------------------------
 
 	@Transactional(readOnly = true)

@@ -1,11 +1,9 @@
 package oneday.safety;
 
-import oneday.safety.SafetyService.ReportReceipt;
-import oneday.safety.SafetyService.SafetyTarget;
+import java.util.Map;
 
-import jakarta.validation.Valid;
-import jakarta.validation.constraints.NotNull;
-import jakarta.validation.constraints.Size;
+import oneday.common.ApiException;
+import oneday.safety.SafetyService.ReportReceipt;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -27,24 +25,28 @@ public class SafetyController {
 		this.safety = safety;
 	}
 
+	/** Exactly one target field: momentId, signalId, connectionId, planId, roomMessageId, rightNowId or dateId. */
 	@PostMapping("/blocks")
-	ResponseEntity<Void> block(@AuthenticationPrincipal Jwt jwt, @RequestBody BlockRequest request) {
-		safety.block(jwt.getSubject(), new SafetyTarget(request.momentId(), request.signalId(), request.connectionId()));
+	ResponseEntity<Void> block(@AuthenticationPrincipal Jwt jwt, @RequestBody Map<String, Object> body) {
+		safety.block(jwt.getSubject(), safety.targetFrom(body));
 		return ResponseEntity.noContent().build();
 	}
 
 	@PostMapping("/reports")
 	@ResponseStatus(HttpStatus.CREATED)
-	ReportReceipt report(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody ReportRequest request) {
-		return safety.report(jwt.getSubject(),
-				new SafetyTarget(request.momentId(), request.signalId(), request.connectionId()), request.category(),
-				request.details(), Boolean.TRUE.equals(request.alsoBlock()));
-	}
-
-	record BlockRequest(String momentId, String signalId, String connectionId) {
-	}
-
-	record ReportRequest(String momentId, String signalId, String connectionId, @NotNull ReportCategory category,
-			@Size(max = 1000) String details, Boolean alsoBlock) {
+	ReportReceipt report(@AuthenticationPrincipal Jwt jwt, @RequestBody Map<String, Object> body) {
+		ReportCategory category;
+		try {
+			category = ReportCategory.valueOf(String.valueOf(body.get("category")));
+		}
+		catch (IllegalArgumentException ex) {
+			throw ApiException.badRequest("CATEGORY_REQUIRED", "Choose what happened (category)");
+		}
+		Object details = body.get("details");
+		if (details != null && (!(details instanceof String text) || text.length() > 1000)) {
+			throw ApiException.badRequest("INVALID_DETAILS", "Details are text, up to 1000 characters");
+		}
+		return safety.report(jwt.getSubject(), safety.targetFrom(body), category, (String) details,
+				Boolean.TRUE.equals(body.get("alsoBlock")));
 	}
 }

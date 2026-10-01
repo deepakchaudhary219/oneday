@@ -13,6 +13,7 @@ import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import oneday.common.ApiException;
@@ -327,6 +328,22 @@ public class PlanService {
 			.filter(m -> !blocked.contains(m.getSenderId()))
 			.map(m -> RoomMessage.of(m, userId, profiles.find(m.getSenderId()).map(Profile::firstName).orElse("Someone")))
 			.toList();
+	}
+
+	// ---- safety ---------------------------------------------------------------------------------------
+
+	/** The host behind a plan the viewer could see or is part of (for block and report). */
+	@Transactional(readOnly = true)
+	public Optional<String> hostOf(String viewerId, String planId) {
+		return plans.findById(planId).map(Plan::getHostId);
+	}
+
+	/** The sender of a Room message, if the viewer is a member of that Room. */
+	@Transactional(readOnly = true)
+	public Optional<String> senderOf(String viewerId, String roomMessageId) {
+		return messages.findById(roomMessageId)
+			.filter(m -> plans.findById(m.getPlanId()).map(p -> isIn(p, viewerId)).orElse(false))
+			.map(PlanMessage::getSenderId);
 	}
 
 	// ---- lifecycle ----------------------------------------------------------------------------------
