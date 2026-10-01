@@ -144,6 +144,9 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `POST/GET /dates/{id}/debrief` | | Mutual Debrief: only positive answers both gave are revealed; safety answers never are |
 | `GET /meeting-points?category=&radiusKm=` | | Safety-Verified Meeting Points near the caller's cell |
 | `GET /ledger?month=` | | The caller's private Real Value Ledger |
+| `GET /map/stories?scope=&activity=&todaysPrompt=` | | Story Map: public stories in adaptive k-anonymous clusters (§5.4) with Roots/Language/activity/prompt lenses and relay threads |
+| `GET /prompts/today` · `GET/POST /staff/prompts` (*moderator*) | | Today's Prompt (give-to-get unlock); staff schedule global or Roots prompts |
+| `POST /moments` with `promptKey` / `replyToMomentId` · `GET /moments/{id}/relay` | | Answer the prompt; join a Story Relay (public, one link per person, at most 30) |
 | `GET /staff/date-alerts` · `POST /staff/date-alerts/{dateId}/{userId}/resolve` · `POST/DELETE /staff/meeting-points` | *moderator* | Date Mode alert desk (reads audited) and Meeting Point curation |
 | `GET /staff/events/dead` · `POST /staff/events/{id}/requeue` | *admin* | Outbox dead-letter queue |
 | `GET /staff/verification-queue` · `POST /staff/verification/{userId}/decision` | *moderator* | Manual review: `APPROVE`, `RETRY`, or `REJECT` (also suspends the account) |
@@ -202,12 +205,21 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
    - If the target is inside one of their **Safe Zones** (the geohash-5 prefix matches), the result is always `NEARBY_AREA` with no direction.
 7. **Heat:** group live public moments by geohash-5 parent and activity. Emit a cell only when the number of **distinct owners ≥ k**, with a level of `LOW`/`ACTIVE`/`BUSY` (never exact counts).
 
+### 5.4 Story Map clustering (k-anonymity for places)
+A story carries its **capture cell** (geohash-6). The map never places an individual:
+1. **Neighbourhood clusters** (radius lens only): a cell is emitted only if **≥ `neighbourhood-k` (3) distinct people** posted there.
+2. **Area clusters:** the remaining stories roll up to their geohash-5 parent, which is emitted only with **≥ `area-k` (2) distinct people**.
+3. **Unplaced shelf:** anything else, plus every story captured inside its owner's Safe Zone, goes to "around your city" with no coordinates.
+4. City, Roots and Language lenses start at step 2, so wider reach means coarser placement.
+
+Cluster coordinates are cell or area *centres*. Counts are capped at "9+". The viewer's own stories, and those of blocked people, are left out *before* clustering, so a block cannot be used to isolate someone. People who paused location, are unverified or are in Couple Mode are left out too.
+
 ### 5.3 Residual risk (stated honestly)
 Someone who is physically present, or who probes slowly across days, can learn which ~0.73 km² cell a target is in while that target is sharing location. This is the product's accepted floor, and it is the same order of precision as "neighbourhood". Users who need more protection have **Safe Zones** and **pause**. M2 adds device attestation, which raises the cost of GPS spoofing further.
 
 ---
 
-## 6. Data model (Flyway `V1`–`V13`)
+## 6. Data model (Flyway `V1`–`V14`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -232,6 +244,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `connections` couple columns (V11) | `couple_a`, `couple_b`, `couple_since` | Private per side, like spark flags |
 | `ledger_entries` (V12) | `user_id`, `kind`, `occurred_at`, UQ(`user_id`, `kind`, `source_event_id`) | Read model; the unique key keeps the projection exactly-once |
 | `meeting_points` · `date_plans` · `date_participants` (V13) | venue + coordinates · plan state machine with `row_version` · per-person consent, current point, check-in, escalation, trusted contact, token hash, debrief | Positions, contacts and tokens are purged 2 h after a plan closes (an open escalation keeps them up to 7 days) |
+| `daily_prompts` (V14); `moments.prompt_key`, `relay_root_id`, `reply_to_id`, `relay_depth`; `profiles.country_code` | prompt date + optional home region · relay links · ISO country | Prompts per local date; the country picks the emergency number |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 
 ---

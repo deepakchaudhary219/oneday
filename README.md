@@ -11,7 +11,8 @@ A story-first, hyperlocal social network where friendship **and dating** can hap
 | [`docs/01-market-and-feasibility.md`](docs/01-market-and-feasibility.md) | September 2026 market check (Snapchat, Instagram Map, Tinder, Bumble, Hinge, India), feasibility, the findings that change the original blueprint |
 | [`docs/02-product-blueprint-v2.md`](docs/02-product-blueprint-v2.md) | Consolidated product spec: Dating Lens + Mutual Spark, the "Roots & Radius" map, Real Values, India-first requirements, release scope |
 | [`docs/03-technical-architecture-v2.md`](docs/03-technical-architecture-v2.md) | Modular-monolith architecture, API surface, **location-privacy engineering**, data model, DPDP/IT Rules compliance |
-| [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) | Milestones M0–M6, team, density gates, what Milestone 1 delivers |
+| [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) | Milestones M0–M6, team, density gates, what each milestone delivered |
+| [`docs/05-engagement-psychology.md`](docs/05-engagement-psychology.md) | Why people come back: the psychology behind every engagement feature, the dark patterns we refuse, and how we measure it |
 
 These docs extend the original *Product & Psychology Blueprint* and *Technical Architecture & System Design Specification*.
 
@@ -37,6 +38,13 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
 - Grievance redressal to the Grievance Officer (IT Rules 3(2), DPDP), including appeals from suspended accounts.
 - Observability: request ids on every response and log line, and Prometheus metrics with alertable backlog gauges.
 - Domain events through a **transactional outbox**, with idempotent consumers (inbox), lease-based relaying across replicas, retries with backoff and a dead-letter queue for staff.
+
+**Engagement layer** (see [`docs/05-engagement-psychology.md`](docs/05-engagement-psychology.md)):
+- **Story Map** (`GET /map/stories`): public stories placed where they were captured. Clusters are adaptive and k-anonymous, so no person is ever pinned. Lenses: Roots, language, activity and Today's Prompt. Story Relays are drawn as threads. Private accounts can post public stories.
+- **Today's Prompt** (`GET /prompts/today`): one local prompt a day plus staff-scheduled Roots/festival prompts. Nearby answers unlock after you answer publicly.
+- **Story Relays**: answer a stranger's public story with your own (`replyToMomentId`, `GET /moments/{id}/relay`).
+- **Connection Warmth** instead of streaks: no countdown and no loss; conversation starters from shared context.
+- **Global from day one**: a country on the profile drives the emergency number on every safety surface.
 
 **Milestone 4 (dating-ready v1.5) so far:**
 - **Date Mode:** plans between Connections, exact location that is time-boxed and needs both people's consent, a trusted contact with a private live link, "Going OK?" check-ins that escalate, one-tap SOS (112), "home safe" end-of-date confirmation, and a Trust & Safety alert desk.
@@ -166,6 +174,24 @@ curl -s $B/grievances/officer | jq
 curl -s $B/grievances -H "Authorization: Bearer $RAVI" -H 'Content-Type: application/json' \
   -d '{"category":"ACCOUNT_ACTION","description":"Please review my suspension."}' | jq  # reference + deadline
 ```
+
+### Story Map, Today's Prompt and relays (dev profile)
+
+```bash
+P=$(curl -s $B/prompts/today -H "Authorization: Bearer $ASHA")                  # today's prompt + truthful teaser
+echo "$P" | jq
+KEY=$(echo "$P" | jq -r .promptKey)
+curl -s $B/moments -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' \
+  -d "{\"kind\":\"TEXT\",\"caption\":\"Filter coffee at the corner darshini\",\"activityTag\":\"coffee\",\"shareScope\":\"PUBLIC_DISCOVERY\",\"promptKey\":\"$KEY\"}" | jq
+curl -s "$B/map/stories?scope=RADIUS" -H "Authorization: Bearer $RAVI" | jq    # clusters, never single people
+curl -s "$B/map/stories?scope=ROOTS" -H "Authorization: Bearer $RAVI" | jq     # people from your home region
+# Answer someone's public story with your own: a Story Relay.
+curl -s $B/moments -H "Authorization: Bearer $RAVI" -H 'Content-Type: application/json' \
+  -d "{\"kind\":\"TEXT\",\"caption\":\"Same here!\",\"shareScope\":\"PUBLIC_DISCOVERY\",\"replyToMomentId\":\"$M\"}" | jq
+curl -s $B/moments/$M/relay -H "Authorization: Bearer $ASHA" | jq
+```
+
+The Story Map needs at least 3 people in a neighbourhood cell (or 2 in a ~5 km area) before it places anything there, so seed a few accounts when trying it locally.
 
 ### Date Mode (dev profile)
 
