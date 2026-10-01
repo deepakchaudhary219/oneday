@@ -17,6 +17,7 @@ import oneday.common.ApiException;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionService;
 import oneday.identity.UserGuard;
+import oneday.realtime.RealtimeService;
 import oneday.safety.BlockChecker;
 
 import org.springframework.data.domain.PageRequest;
@@ -41,8 +42,11 @@ public class ChatService {
 
 	private final Clock clock;
 
+	private final RealtimeService realtime;
+
 	public ChatService(ConversationRepository conversations, MessageRepository messages,
-			ConnectionService connections, UserGuard guard, BlockChecker blocks, Clock clock) {
+			ConnectionService connections, UserGuard guard, BlockChecker blocks, Clock clock, RealtimeService realtime) {
+		this.realtime = realtime;
 		this.conversations = conversations;
 		this.messages = messages;
 		this.connections = connections;
@@ -71,6 +75,10 @@ public class ChatService {
 			throw ApiException.conflict("CONVERSATION_INACTIVE", "This conversation is no longer active");
 		}
 		Message message = messages.save(new Message(conversationId, userId, body.strip(), clock.instant()));
+		// Each side gets its own view (mine true/false), the sender's other devices included.
+		realtime.toUser(connection.otherThan(userId), "message",
+				new RealtimeMessage(conversationId, MessageView.of(message, connection.otherThan(userId))));
+		realtime.toUser(userId, "message", new RealtimeMessage(conversationId, MessageView.of(message, userId)));
 		return MessageView.of(message, userId);
 	}
 
@@ -177,6 +185,10 @@ public class ChatService {
 
 	private Conversation requireConversation(String conversationId) {
 		return conversations.findById(conversationId).orElseThrow(() -> ApiException.notFound("Conversation"));
+	}
+
+	/** A new message in one of the recipient's conversations. */
+	public record RealtimeMessage(String conversationId, MessageView message) {
 	}
 
 	public record MessageView(String id, boolean mine, String body, Instant sentAt) {

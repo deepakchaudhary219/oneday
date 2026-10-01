@@ -27,6 +27,7 @@ import oneday.geo.LocationService;
 import oneday.identity.UserGuard;
 import oneday.notify.NotificationService;
 import oneday.profile.ActivityTags;
+import oneday.realtime.RealtimeService;
 import oneday.profile.Affinity;
 import oneday.profile.Profile;
 import oneday.profile.ProfileService;
@@ -94,10 +95,13 @@ public class PlanService {
 
 	private final Clock clock;
 
+	private final RealtimeService realtime;
+
 	public PlanService(PlanRepository plans, PlanMemberRepository members, PlanMessageRepository messages,
 			MeetingPointService meetingPoints, LocationService locations, ProfileService profiles,
 			ConnectionService connections, BlockChecker blocks, UserGuard guard, NotificationService notifications,
-			EventPublisher events, Clock clock) {
+			EventPublisher events, Clock clock, RealtimeService realtime) {
+		this.realtime = realtime;
 		this.plans = plans;
 		this.members = members;
 		this.messages = messages;
@@ -289,7 +293,15 @@ public class PlanService {
 			throw ApiException.conflict("ROOM_CLOSED", "This plan is over");
 		}
 		PlanMessage message = messages.save(new PlanMessage(planId, userId, body.strip(), clock.instant()));
-		return RoomMessage.of(message, userId, profiles.require(userId).firstName());
+		String name = profiles.require(userId).firstName();
+		// Every member who hasn't blocked (or been blocked by) the sender gets it live.
+		Set<String> blocked = blocks.blockedEitherWay(userId);
+		members.findByKeyPlanId(planId)
+			.stream()
+			.filter(m -> m.isIn() && !blocked.contains(m.getUserId()))
+			.forEach(m -> realtime.toUser(m.getUserId(), "room",
+					new RealtimeRoomMessage(planId, RoomMessage.of(message, m.getUserId(), name))));
+		return RoomMessage.of(message, userId, name);
 	}
 
 	/** The Room, newest first. Messages from people the viewer blocked (either way) are hidden. */
@@ -450,6 +462,9 @@ public class PlanService {
 	}
 
 	public record JoinRequest(String handle, String firstName, String sharedContext, boolean fromYourHomeRegion) {
+	}
+
+	public record RealtimeRoomMessage(String planId, RoomMessage message) {
 	}
 
 	public record RoomMessage(String id, String firstName, boolean mine, String body, Instant sentAt) {

@@ -35,6 +35,7 @@ import oneday.identity.UserGuard;
 import oneday.notify.NotificationService;
 import oneday.profile.Profile;
 import oneday.profile.ProfileService;
+import oneday.realtime.RealtimeService;
 import oneday.safety.BlockChecker;
 import oneday.sms.PhoneNumbers;
 import oneday.sms.SmsTemplate;
@@ -93,10 +94,13 @@ public class DateService {
 
 	private final Clock clock;
 
+	private final RealtimeService realtime;
+
 	public DateService(DatePlanRepository plans, DateParticipantRepository participants,
 			MeetingPointService meetingPoints, ConnectionService connections, ProfileService profiles, UserGuard guard,
 			BlockChecker blocks, NotificationService notifications, EventPublisher events, TrustedContactMessenger sms, RateLimiter rateLimiter,
-			MeterRegistry metrics, DateProperties settings, Clock clock) {
+			MeterRegistry metrics, DateProperties settings, Clock clock, RealtimeService realtime) {
+		this.realtime = realtime;
 		this.plans = plans;
 		this.participants = participants;
 		this.meetingPoints = meetingPoints;
@@ -264,6 +268,12 @@ public class DateService {
 			throw ApiException.tooManyRequests("LOCATION_UPDATE_TOO_FREQUENT", "Location updates are rate-limited");
 		}
 		me.moveTo(lat, lon, now);
+		// Live only to the partner, and only while they share too (mutual consent), inside the time box.
+		DateParticipant partner = participant(plan, plan.otherThan(userId));
+		if (partner.isShareLocation()) {
+			realtime.toUser(partner.getUserId(), "date-location",
+					new RealtimeDateLocation(plan.getId(), new LivePosition(lat, lon, now)));
+		}
 		return view(plan, userId);
 	}
 
@@ -692,6 +702,10 @@ public class DateService {
 	}
 
 	public record LivePosition(double lat, double lon, Instant at) {
+	}
+
+	/** The partner's new position on a plan (sent only while both share, inside the time box). */
+	public record RealtimeDateLocation(String dateId, LivePosition position) {
 	}
 
 	/** {@code texted} is false when no SMS provider is configured: share {@code shareUrl} yourself. */

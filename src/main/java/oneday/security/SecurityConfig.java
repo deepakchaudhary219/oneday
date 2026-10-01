@@ -71,6 +71,9 @@ public class SecurityConfig {
 				// A trusted contact has no account: the unguessable link is the credential (Date Mode).
 				.requestMatchers(HttpMethod.GET, "/date-share/*")
 				.permitAll()
+				// The WebSocket handshake; the socket authenticates with the access token on STOMP CONNECT.
+				.requestMatchers("/ws", "/ws/**")
+				.permitAll()
 				.requestMatchers(scrapeOnManagementPort)
 				.permitAll()
 				.requestMatchers("/actuator/prometheus")

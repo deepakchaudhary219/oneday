@@ -12,6 +12,7 @@ import oneday.identity.UserGuard;
 import oneday.notify.PushSender.PushMessage;
 import oneday.profile.Profile;
 import oneday.profile.ProfileService;
+import oneday.realtime.RealtimeService;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -50,9 +51,12 @@ public class NotificationService {
 
 	private final EventPublisher events;
 
+	private final RealtimeService realtime;
+
 	public NotificationService(DeviceRepository devices, NoticeRepository notices, PulseDeliveryRepository deliveries,
 			ObjectProvider<PushSender> push, ProfileService profiles, UserGuard guard, Clock clock,
-			EventPublisher events) {
+			EventPublisher events, RealtimeService realtime) {
+		this.realtime = realtime;
 		this.events = events;
 		this.devices = devices;
 		this.notices = notices;
@@ -144,6 +148,7 @@ public class NotificationService {
 			return;
 		}
 		Notice notice = notices.save(new Notice(userId, kind, message, clock.instant()));
+		realtime.toUser(userId, "notice", NoticeView.of(notice));
 		requestPush(userId, "A message from OneDay Safety", "Tap to read it in the app",
 				Map.of("open", "notices", "noticeId", notice.getId()));
 	}

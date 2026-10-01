@@ -91,6 +91,11 @@
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-mysql</artifactId>
 		</dependency>
+		<!-- Real-time delivery (STOMP over WebSocket) for chat, Rooms, notices and Date Mode live location. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-websocket</artifactId>
+		</dependency>
 		<!-- Optional event transport (oneday.events.transport=kafka): outbox -> Kafka -> consumer groups. -->
 		<dependency>
 			<groupId>org.springframework.boot</groupId>
