@@ -27,6 +27,7 @@ import oneday.identity.UserGuard;
 import oneday.moments.Moment;
 import oneday.moments.MomentKind;
 import oneday.moments.MomentService;
+import oneday.plus.Entitlements;
 import oneday.profile.ActivityTags;
 import oneday.profile.Affinity;
 import oneday.profile.Profile;
@@ -90,10 +91,13 @@ public class StoryMapService {
 
 	private final VouchService vouches;
 
+	private final Entitlements entitlements;
+
 	public StoryMapService(MomentService moments, LocationService locations, ProfileService profiles,
 			ConnectionService connections, BlockChecker blocks, UserGuard guard, PromptCatalog prompts,
 			RateLimiter rateLimiter, StoryMapProperties settings, OneDayProperties properties, Clock clock,
-			VouchService vouches) {
+			VouchService vouches, Entitlements entitlements) {
+		this.entitlements = entitlements;
 		this.vouches = vouches;
 		this.moments = moments;
 		this.locations = locations;
@@ -126,7 +130,8 @@ public class StoryMapService {
 		}
 		GeoCell here = locations.requireCurrentCell(viewerId);
 		double radiusKm = scope == DiscoveryScope.RADIUS
-				? Math.min(viewer.getDiscoveryRadiusKm(), discovery.maxRadiusKm()) : discovery.cityRadiusKm();
+				? Math.min(Math.min(viewer.getDiscoveryRadiusKm(), discovery.maxRadiusKm()), entitlements.maxRadiusKm(viewerId))
+				: discovery.cityRadiusKm();
 		boolean fineAllowed = scope == DiscoveryScope.RADIUS;
 		String activity = ActivityTags.normalize(activityFilter);
 		String promptKey = todaysPrompt ? prompts.todayFor(viewerId).key() : null;

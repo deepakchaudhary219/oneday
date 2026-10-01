@@ -29,6 +29,7 @@ import oneday.geo.LocationPrivacy.Precision;
 import oneday.geo.LocationService;
 import oneday.identity.UserGuard;
 import oneday.notify.NotificationService;
+import oneday.plus.Entitlements;
 import oneday.profile.ActivityTags;
 import oneday.profile.Affinity;
 import oneday.profile.Profile;
@@ -83,10 +84,13 @@ public class RightNowService {
 
 	private final Clock clock;
 
+	private final Entitlements entitlements;
+
 	public RightNowService(RightNowSessionRepository sessions, RightNowJoinRepository joins,
 			RightNowProperties settings, LocationService locations, LocationPrivacy privacy, ProfileService profiles,
 			ConnectionService connections, ChatService chat, BlockChecker blocks, UserGuard guard,
-			NotificationService notifications, EventPublisher events, Clock clock) {
+			NotificationService notifications, EventPublisher events, Clock clock, Entitlements entitlements) {
+		this.entitlements = entitlements;
 		this.sessions = sessions;
 		this.joins = joins;
 		this.settings = settings;
@@ -152,7 +156,7 @@ public class RightNowService {
 			.stream()
 			.map(RightNowJoin::getSessionId)
 			.collect(Collectors.toSet());
-		double radius = viewer.getDiscoveryRadiusKm();
+		double radius = Math.min(viewer.getDiscoveryRadiusKm(), entitlements.maxRadiusKm(viewerId));
 		List<Ranked> found = new ArrayList<>();
 		for (RightNowSession s : active) {
 			GeoCell cell = cells.get(s.getUserId());

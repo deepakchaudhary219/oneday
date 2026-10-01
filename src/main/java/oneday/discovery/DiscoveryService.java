@@ -28,6 +28,7 @@ import oneday.geo.LocationService;
 import oneday.identity.UserGuard;
 import oneday.moments.Moment;
 import oneday.moments.MomentService;
+import oneday.plus.Entitlements;
 import oneday.profile.ActivityTags;
 import oneday.profile.Affinity;
 import oneday.profile.Profile;
@@ -70,10 +71,14 @@ public class DiscoveryService {
 
 	private final VouchService vouches;
 
+	private final Entitlements entitlements;
+
 	public DiscoveryService(MomentService moments, LocationService locations, ProfileService profiles,
 			ConnectionService connections,
 			SignalService signals, BlockChecker blocks, UserGuard guard, LocationPrivacy privacy,
-			RateLimiter rateLimiter, Clock clock, OneDayProperties properties, VouchService vouches) {
+			RateLimiter rateLimiter, Clock clock, OneDayProperties properties, VouchService vouches,
+			Entitlements entitlements) {
+		this.entitlements = entitlements;
 		this.vouches = vouches;
 		this.moments = moments;
 		this.locations = locations;
@@ -110,7 +115,8 @@ public class DiscoveryService {
 		}
 		GeoCell here = locations.requireCurrentCell(viewerId);
 		double radiusKm = scope == DiscoveryScope.RADIUS
-				? Math.min(viewer.getDiscoveryRadiusKm(), settings.maxRadiusKm()) : settings.cityRadiusKm();
+				? Math.min(Math.min(viewer.getDiscoveryRadiusKm(), settings.maxRadiusKm()), entitlements.maxRadiusKm(viewerId))
+				: settings.cityRadiusKm();
 		Precision precision = scope == DiscoveryScope.RADIUS ? Precision.BAND : Precision.CITY;
 		String activity = ActivityTags.normalize(activityFilter);
 

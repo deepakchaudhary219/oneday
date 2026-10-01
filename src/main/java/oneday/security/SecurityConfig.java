@@ -74,6 +74,9 @@ public class SecurityConfig {
 				// The WebSocket handshake; the socket authenticates with the access token on STOMP CONNECT.
 				.requestMatchers("/ws", "/ws/**")
 				.permitAll()
+				// Payment provider webhooks authenticate with an HMAC signature over the raw body.
+				.requestMatchers(HttpMethod.POST, "/webhooks/razorpay")
+				.permitAll()
 				.requestMatchers(scrapeOnManagementPort)
 				.permitAll()
 				.requestMatchers("/actuator/prometheus")

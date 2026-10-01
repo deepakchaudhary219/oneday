@@ -27,6 +27,7 @@ import oneday.geo.GeoMath;
 import oneday.geo.LocationService;
 import oneday.identity.UserGuard;
 import oneday.notify.NotificationService;
+import oneday.plus.Entitlements;
 import oneday.profile.ActivityTags;
 import oneday.realtime.RealtimeService;
 import oneday.profile.Affinity;
@@ -59,8 +60,6 @@ public class PlanService {
 	static final int MIN_CAPACITY = 3;
 
 	static final int MAX_CAPACITY = 12;
-
-	static final int MAX_OPEN_HOSTED = 2;
 
 	static final int REQUESTS_PER_DAY = 10;
 
@@ -100,10 +99,14 @@ public class PlanService {
 
 	private final RateLimiter rateLimiter;
 
+	private final Entitlements entitlements;
+
 	public PlanService(PlanRepository plans, PlanMemberRepository members, PlanMessageRepository messages,
 			MeetingPointService meetingPoints, LocationService locations, ProfileService profiles,
 			ConnectionService connections, BlockChecker blocks, UserGuard guard, NotificationService notifications,
-			EventPublisher events, Clock clock, RealtimeService realtime, RateLimiter rateLimiter) {
+			EventPublisher events, Clock clock, RealtimeService realtime, RateLimiter rateLimiter,
+			Entitlements entitlements) {
+		this.entitlements = entitlements;
 		this.realtime = realtime;
 		this.rateLimiter = rateLimiter;
 		this.plans = plans;
@@ -138,8 +141,9 @@ public class PlanService {
 				|| !endsAt.isAfter(startsAt) || Duration.between(startsAt, endsAt).compareTo(MAX_LENGTH) > 0) {
 			throw ApiException.unprocessable("INVALID_TIME", "Plans start within 14 days and last up to 6 hours");
 		}
-		if (plans.countByHostIdAndStatusAndEndsAtAfter(userId, Plan.Status.OPEN, now) >= MAX_OPEN_HOSTED) {
-			throw ApiException.conflict("TOO_MANY_PLANS", "You're already hosting two plans");
+		int maxOpen = entitlements.maxOpenPlans(userId);
+		if (plans.countByHostIdAndStatusAndEndsAtAfter(userId, Plan.Status.OPEN, now) >= maxOpen) {
+			throw ApiException.conflict("TOO_MANY_PLANS", "You're already hosting " + maxOpen + " plans");
 		}
 		String region = null;
 		if (rootsOnly) {

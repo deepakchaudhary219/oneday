@@ -13,6 +13,7 @@ import oneday.common.ApiException;
 import oneday.config.OneDayProperties;
 import oneday.identity.User;
 import oneday.identity.UserGuard;
+import oneday.plus.Entitlements;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -32,7 +33,11 @@ public class ProfileService {
 
 	private final OneDayProperties properties;
 
-	public ProfileService(ProfileRepository profiles, UserGuard guard, Clock clock, OneDayProperties properties) {
+	private final Entitlements entitlements;
+
+	public ProfileService(ProfileRepository profiles, UserGuard guard, Clock clock, OneDayProperties properties,
+			Entitlements entitlements) {
+		this.entitlements = entitlements;
 		this.profiles = profiles;
 		this.guard = guard;
 		this.clock = clock;
@@ -114,9 +119,10 @@ public class ProfileService {
 			profile.setDiscretionMode(request.discretionMode());
 		}
 		if (request.discoveryRadiusKm() != null) {
-			int max = properties.discovery().maxRadiusKm();
+			int max = Math.min(properties.discovery().maxRadiusKm(), entitlements.maxRadiusKm(userId));
 			if (request.discoveryRadiusKm() < 1 || request.discoveryRadiusKm() > max) {
-				throw ApiException.badRequest("INVALID_RADIUS", "Discovery radius must be between 1 and " + max + " km");
+				throw ApiException.badRequest("INVALID_RADIUS", "Discovery radius can be 1 to " + max + " km"
+						+ (entitlements.isPlus(userId) ? "" : " (Plus widens it)"));
 			}
 			profile.setDiscoveryRadiusKm(request.discoveryRadiusKm());
 		}
