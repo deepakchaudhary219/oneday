@@ -130,6 +130,27 @@ public class SignalService {
 	}
 
 	/** A bounded batch of in-window signals, best shared context first. No expiry times are exposed. */
+	/**
+	 * The sender's budget in the rolling 24 h window, so the app can show "2 left today" and, when it's used,
+	 * when the next one frees up, instead of finding out from a refusal.
+	 */
+	@Transactional(readOnly = true)
+	public BudgetView budget(String senderId) {
+		guard.requireExisting(senderId);
+		Instant since = clock.instant().minus(BUDGET_WINDOW);
+		int used = (int) signals.countBySenderIdAndCreatedAtAfter(senderId, since);
+		int remaining = Math.max(0, settings.dailyBudget() - used);
+		Instant nextFreesAt = remaining > 0 ? null
+				: signals.findFirstBySenderIdAndCreatedAtAfterOrderByCreatedAtAsc(senderId, since)
+					.map(s -> s.getCreatedAt().plus(BUDGET_WINDOW))
+					.orElse(null);
+		return new BudgetView(settings.dailyBudget(), remaining, nextFreesAt);
+	}
+
+	/** {@code nextFreesAt} is set only when nothing is left. */
+	public record BudgetView(int dailyBudget, int remaining, Instant nextFreesAt) {
+	}
+
 	@Transactional(readOnly = true)
 	public DigestView digest(String recipientId) {
 		Instant now = clock.instant();

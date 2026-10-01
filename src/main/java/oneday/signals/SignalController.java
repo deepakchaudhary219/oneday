@@ -40,6 +40,11 @@ public class SignalController {
 		return signals.send(jwt.getSubject(), request.momentId(), request.reaction(), request.activityRef());
 	}
 
+	@GetMapping("/budget")
+	SignalService.BudgetView budget(@AuthenticationPrincipal Jwt jwt) {
+		return signals.budget(jwt.getSubject());
+	}
+
 	@GetMapping("/digest")
 	DigestView digest(@AuthenticationPrincipal Jwt jwt) {
 		return signals.digest(jwt.getSubject());

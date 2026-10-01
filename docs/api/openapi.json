@@ -4701,6 +4701,24 @@
         "tags" : [ "Signal" ]
       }
     },
+    "/signals/budget" : {
+      "get" : {
+        "operationId" : "signalBudget",
+        "responses" : {
+          "200" : {
+            "content" : {
+              "*/*" : {
+                "schema" : {
+                  "$ref" : "#/components/schemas/BudgetView"
+                }
+              }
+            },
+            "description" : "OK"
+          }
+        },
+        "tags" : [ "Signal" ]
+      }
+    },
     "/signals/digest" : {
       "get" : {
         "operationId" : "signalDigest",
@@ -6639,6 +6657,23 @@
           "state" : {
             "type" : "string",
             "enum" : [ "EARLY", "BALANCED", "FLOWING", "NUDGE" ]
+          }
+        }
+      },
+      "BudgetView" : {
+        "type" : "object",
+        "properties" : {
+          "dailyBudget" : {
+            "type" : "integer",
+            "format" : "int32"
+          },
+          "nextFreesAt" : {
+            "type" : "string",
+            "format" : "date-time"
+          },
+          "remaining" : {
+            "type" : "integer",
+            "format" : "int32"
           }
         }
       },

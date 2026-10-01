@@ -2,6 +2,7 @@ package oneday.signals;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -14,6 +15,8 @@ public interface SignalRepository extends JpaRepository<Signal, String> {
 	boolean existsBySenderIdAndMomentId(String senderId, String momentId);
 
 	long countBySenderIdAndCreatedAtAfter(String senderId, Instant since);
+
+	Optional<Signal> findFirstBySenderIdAndCreatedAtAfterOrderByCreatedAtAsc(String senderId, Instant after);
 
 	List<Signal> findByRecipientIdAndStatusAndWindowExpiresAtAfter(String recipientId, Signal.Status status,
 			Instant now);

@@ -200,9 +200,14 @@ class CoreLoopIntegrationTest extends ApiTestSupport {
 			locate(poster, BLR_LAT, BLR_LON);
 			moments[i] = postPublicMoment(poster, "coffee");
 		}
+		getAs(sender, "/signals/budget").andExpect(jsonPath("$.dailyBudget").value(3))
+			.andExpect(jsonPath("$.remaining").value(3))
+			.andExpect(jsonPath("$.nextFreesAt").doesNotExist());
 		for (int i = 0; i < 3; i++) {
 			sendSignal(sender, moments[i], null);
 		}
+		getAs(sender, "/signals/budget").andExpect(jsonPath("$.remaining").value(0))
+			.andExpect(jsonPath("$.nextFreesAt").exists());
 		postAs(sender, "/signals", "{\"momentId\":\"" + moments[3] + "\",\"reaction\":\"SAME_HERE\"}")
 			.andExpect(status().isTooManyRequests())
 			.andExpect(jsonPath("$.code").value("SIGNAL_BUDGET_EXHAUSTED"));
