@@ -1,6 +1,7 @@
 package oneday.notify;
 
 import java.time.Clock;
+import java.time.DateTimeException;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -60,12 +61,26 @@ public class LocalPulseScheduler {
 		deliverDue();
 	}
 
-	/** @return how many pulses were pushed in this pass */
+	/**
+	 * Only people whose chosen hour is now, in their own zone, are looked at: one indexed query per time zone
+	 * in use (a handful, not one per user), so the job's cost tracks the pulses due, not the user base.
+	 *
+	 * @return how many pulses were pushed in this pass
+	 */
 	public int deliverDue() {
 		int sent = 0;
-		for (String userId : devices.findUserIdsWithDevices()) {
-			if (deliverIfDue(userId)) {
-				sent++;
+		for (String zone : profiles.timeZonesInUse()) {
+			int hour;
+			try {
+				hour = clock.instant().atZone(ZoneId.of(zone)).getHour();
+			}
+			catch (DateTimeException ex) {
+				continue;
+			}
+			for (String userId : devices.findUserIdsDueInZone(zone, hour)) {
+				if (deliverIfDue(userId)) {
+					sent++;
+				}
 			}
 		}
 		return sent;
@@ -93,7 +108,7 @@ public class LocalPulseScheduler {
 		if (!worthSaying) {
 			return false;
 		}
-		int delivered = notifications.pushToUser(userId, "Your Local Pulse", view.headline(), Map.of("open", "pulse"));
+		int delivered = notifications.deliverNow(userId, "Your Local Pulse", view.headline(), Map.of("open", "pulse"));
 		claimTx.executeWithoutResult(s -> deliveries.findById(new PulseDelivery.Key(userId, local.toLocalDate()))
 			.ifPresent(PulseDelivery::markSent));
 		return delivered > 0;

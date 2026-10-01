@@ -2,6 +2,7 @@ package oneday.events;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 /**
  * The published language between modules: facts that already happened, named in the past tense. Every
@@ -49,6 +50,21 @@ public sealed interface DomainEvent {
 
 		public List<String> userIds() {
 			return List.of(joinerId, answeredOwnerId);
+		}
+	}
+
+	/**
+	 * A push notification to deliver. Pushes go through the outbox so a slow or failing push provider never
+	 * holds a request's database transaction open, and a failed push is retried.
+	 */
+	record PushRequested(String userId, String title, String body, Map<String, String> data) implements DomainEvent {
+
+		public String aggregateId() {
+			return userId;
+		}
+
+		public List<String> userIds() {
+			return List.of(userId);
 		}
 	}
 

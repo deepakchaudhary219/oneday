@@ -195,7 +195,7 @@ public class RightNowService {
 					"You've used today's Right Now requests. More tomorrow.");
 		}
 		joins.save(new RightNowJoin(sessionId, userId, now));
-		notifications.pushToUser(session.getUserId(), "Right Now", "Someone nearby is up for it too",
+		notifications.requestPush(session.getUserId(), "Right Now", "Someone nearby is up for it too",
 				Map.of("open", "right-now"));
 		return new JoinView("Sent. If they're up for it, you'll be connected.");
 	}

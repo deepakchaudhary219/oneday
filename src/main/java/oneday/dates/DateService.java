@@ -153,7 +153,7 @@ public class DateService {
 		Instant checkIn = defaultCheckIn(plan);
 		participants.save(new DateParticipant(plan.getId(), userId, checkIn));
 		participants.save(new DateParticipant(plan.getId(), partnerId, checkIn));
-		notifications.pushToUser(partnerId, "New plan", "You have a new plan to look at",
+		notifications.requestPush(partnerId, "New plan", "You have a new plan to look at",
 				Map.of("open", "dates", "dateId", plan.getId()));
 		metrics.counter("oneday.dates.proposed").increment();
 		return view(plan, userId);
@@ -172,7 +172,7 @@ public class DateService {
 		plan.confirm(clock.instant());
 		events.publish(new DomainEvent.DateConfirmed(plan.getId(), plan.getProposerId(), plan.getPartnerId(),
 				plan.getStartsAt()));
-		notifications.pushToUser(plan.getProposerId(), "Plan confirmed", "Your plan is on",
+		notifications.requestPush(plan.getProposerId(), "Plan confirmed", "Your plan is on",
 				Map.of("open", "dates", "dateId", plan.getId()));
 		metrics.counter("oneday.dates.confirmed").increment();
 		return view(plan, userId);
@@ -431,7 +431,7 @@ public class DateService {
 		List<DateParticipant> due = participants.findCheckInsDue(now);
 		for (DateParticipant p : due) {
 			p.prompted(now);
-			notifications.pushToUser(p.getUserId(), "Going OK?", "Tap to check in",
+			notifications.requestPush(p.getUserId(), "Going OK?", "Tap to check in",
 					Map.of("open", "dates", "dateId", p.getDateId(), "action", "check-in"));
 		}
 		return due.size();

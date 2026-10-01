@@ -142,6 +142,12 @@ public class ProfileService {
 		return ProfileView.of(profile, user);
 	}
 
+	/** The distinct time zones people use (a small set: one per region, not per person). */
+	@Transactional(readOnly = true)
+	public List<String> timeZonesInUse() {
+		return profiles.findTimeZonesInUse();
+	}
+
 	@Transactional
 	public void delete(String userId) {
 		profiles.deleteById(userId);

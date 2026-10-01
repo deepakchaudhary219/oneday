@@ -21,6 +21,7 @@ import oneday.ledger.LedgerService;
 import oneday.media.MediaService;
 import oneday.moments.MomentService;
 import oneday.notify.NotificationService;
+import oneday.platform.IdempotencyStore;
 import oneday.profile.ProfileService;
 import oneday.rightnow.RightNowService;
 import oneday.safety.SafetyService;
@@ -88,14 +89,17 @@ public class PrivacyService {
 
 	private final RightNowService rightNow;
 
+	private final IdempotencyStore idempotency;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
 			AccountAdministration administration, NotificationService notifications, SessionService sessions,
 			GrievanceService grievances, LedgerService ledger, EventOperations events, DateService dates,
-			WellbeingService wellbeing, RightNowService rightNow, Clock clock,
+			WellbeingService wellbeing, RightNowService rightNow, IdempotencyStore idempotency, Clock clock,
 			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
 		this.rightNow = rightNow;
+		this.idempotency = idempotency;
 		this.clock = clock;
 		this.momentRetention = momentRetention;
 		this.wellbeing = wellbeing;
@@ -253,6 +257,7 @@ public class PrivacyService {
 		ledger.forget(userId);
 		wellbeing.forget(userId);
 		rightNow.forget(userId);
+		idempotency.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
