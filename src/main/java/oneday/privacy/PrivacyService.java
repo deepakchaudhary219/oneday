@@ -26,6 +26,7 @@ import oneday.plans.PlanService;
 import oneday.platform.IdempotencyStore;
 import oneday.plus.PlusService;
 import oneday.profile.ProfileService;
+import oneday.pulsestatus.PulseStatusService;
 import oneday.rightnow.RightNowService;
 import oneday.safety.SafetyService;
 import oneday.security.SessionService;
@@ -103,13 +104,16 @@ public class PrivacyService {
 
 	private final ConsentService consents;
 
+	private final PulseStatusService pulseStatuses;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
 			AccountAdministration administration, NotificationService notifications, SessionService sessions,
 			GrievanceService grievances, LedgerService ledger, EventOperations events, DateService dates,
 			WellbeingService wellbeing, RightNowService rightNow, IdempotencyStore idempotency, PlanService plans,
-			VouchService vouches, PlusService plus, ConsentService consents, Clock clock,
+			VouchService vouches, PlusService plus, ConsentService consents,
+			PulseStatusService pulseStatuses, Clock clock,
 			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
 		this.rightNow = rightNow;
 		this.idempotency = idempotency;
@@ -117,6 +121,7 @@ public class PrivacyService {
 		this.vouches = vouches;
 		this.plus = plus;
 		this.consents = consents;
+		this.pulseStatuses = pulseStatuses;
 		this.clock = clock;
 		this.momentRetention = momentRetention;
 		this.wellbeing = wellbeing;
@@ -209,6 +214,7 @@ public class PrivacyService {
 			.map(a -> row("outcome", a.getOutcome(), "at", a.getCreatedAt()))
 			.toList());
 		data.put("consentHistory", consents.history(userId));
+		data.put("pulseStatus", pulseStatuses.export(userId).orElse(null));
 		return data;
 	}
 
@@ -280,6 +286,7 @@ public class PrivacyService {
 		vouches.forget(userId);
 		plus.forget(userId);
 		consents.forget(userId);
+		pulseStatuses.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);

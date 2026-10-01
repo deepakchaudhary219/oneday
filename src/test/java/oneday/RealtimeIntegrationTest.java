@@ -2,6 +2,7 @@ package oneday;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.lang.reflect.Type;
@@ -74,6 +75,30 @@ class RealtimeIntegrationTest extends ApiTestSupport {
 		assertThat(toRavi).doesNotContain(userIdOf(asha));
 		String toAsha = ashaEvents.poll(10, TimeUnit.SECONDS);
 		assertThat((Boolean) JsonPath.read(toAsha, "$.data.message.mine")).isTrue(); // her other devices sync
+	}
+
+	@Test
+	void friendsSeeAStatusChangeLiveAndStrangersGetNothing() throws Exception {
+		String asha = verifiedUser("Asha");
+		String ravi = verifiedUser("Ravi");
+		String meera = verifiedUser("Meera");
+		String connection = connect(asha, ravi);
+		BlockingQueue<String> raviEvents = new LinkedBlockingQueue<>();
+		BlockingQueue<String> meeraEvents = new LinkedBlockingQueue<>();
+		subscribe(ravi, raviEvents);
+		subscribe(meera, meeraEvents);
+
+		perform(put("/pulse-status"), asha, "{\"mood\":\"SOCIAL\",\"emoji\":\"☕\"}").andExpect(status().isOk());
+		String event = raviEvents.poll(10, TimeUnit.SECONDS);
+		assertThat(event).isNotNull();
+		assertThat((String) JsonPath.read(event, "$.type")).isEqualTo("pulse-status");
+		assertThat((String) JsonPath.read(event, "$.data.connectionId")).isEqualTo(connection);
+		assertThat((String) JsonPath.read(event, "$.data.emoji")).isEqualTo("☕");
+
+		deleteAs(asha, "/pulse-status").andExpect(status().isNoContent());
+		assertThat((String) JsonPath.read(raviEvents.poll(10, TimeUnit.SECONDS), "$.type"))
+			.isEqualTo("pulse-status-cleared");
+		assertThat(meeraEvents.poll(1, TimeUnit.SECONDS)).isNull();
 	}
 
 	@Test
