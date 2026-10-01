@@ -1,9 +1,10 @@
 package oneday.profile;
 
 import java.time.Clock;
+import java.util.Arrays;
 import java.util.LinkedHashSet;
-import java.util.List;
 import java.util.Locale;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.regex.Pattern;
@@ -129,6 +130,13 @@ public class ProfileService {
 			catch (java.time.DateTimeException ex) {
 				throw ApiException.badRequest("INVALID_TIME_ZONE", "Use a time zone such as Asia/Kolkata");
 			}
+		}
+		if (request.country() != null) {
+			String country = request.country().trim().toUpperCase(Locale.ROOT);
+			if (!Arrays.asList(Locale.getISOCountries()).contains(country)) {
+				throw ApiException.badRequest("INVALID_COUNTRY", "Use a two-letter country code such as IN or US");
+			}
+			profile.setCountryCode(country);
 		}
 		profile.touch(clock.instant());
 		return ProfileView.of(profile, user);

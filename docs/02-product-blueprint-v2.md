@@ -43,6 +43,8 @@
 **Snapchat made talking to friends feel light, visual and temporary. OneDay makes meeting *new* people feel just as light. It is safe by design, it works at the level of where you actually are and where you are *from*, and it is measured by whether real relationships (friends, dates, partners) actually form.**
 
 > **Position:** *The app you open for real, nearby, new human connection. You keep Snapchat and Instagram for the friends you already have.* (Kept from §42.1, sharpened.)
+>
+> **Category:** *the meet-new-people layer*. It is a global product from day one, marketed India-first and then through Roots communities abroad (`01-market-and-feasibility.md` §6). The daily pull comes from real people and real answers, never from compulsion mechanics (`05-engagement-psychology.md`).
 
 Why incumbents can't copy it quickly (the §25.2 test, re-run for 2026):
 
@@ -172,6 +174,19 @@ Unlike location "passport" features, **you can never set a fake location**. When
 ### 6.6 Heat layer with k-anonymity
 Activity categories are aggregated per ~5 km cell and shown **only when at least *k* distinct people contribute** (default k = 10 in production). Values are shown as *low / active / busy*, never exact counts. This gives the map ambient usefulness without rendering any individual, even approximately.
 
+### 6.6a Story Map, Today's Prompt and Story Relays (**new**, built)
+- **Story Map:** public stories placed where they were captured, in **adaptive k-anonymous clusters**:
+  - a neighbourhood is shown only when ≥ 3 people posted there;
+  - otherwise the stories roll up to the ~5 km area (≥ 2 people);
+  - otherwise they go to an unplaced "around your city" shelf.
+
+  Safe Zone stories are never placed. Lenses: radius, city, **Roots**, language, activity and Today's Prompt. Clusters show a vibe, a "live now" glow and "N from your home region". No person is ever pinned.
+- **Today's Prompt:** one place-rooted prompt per day per city, plus **Roots prompts** for festivals. Nearby answers unlock after you share a public answer (give to get).
+- **Story Relays:** answer a stranger's public story with your own live story. Relays are drawn as threads across the map.
+- **Private accounts, public stories:** account privacy and share scope stay independent (§3). A private account can make any single story public, and it then appears on the Story Map like any other.
+
+Full rationale and guardrails: `05-engagement-psychology.md` §3.
+
 ### 6.7 Time and fade
 Every node fades on the time-box of its underlying moment (about 24 h). The map keeps **no history of where anyone has been**. The server stores only the *current* cell per user, and deletes it when the user pauses location sharing.
 
@@ -240,6 +255,7 @@ When two people who have a Mutual Spark both confirm *"we're seeing each other"*
 | Entry | Declared DOB. **Under-18 signups are refused and nothing is stored.** Signup rate limits per device/IP (§47.6). | v1 ✅ |
 | Contact gate | Liveness + age-estimate cross-check required at **first contact-reaching action** (post publicly, signal, reveal, message, spark). Enforced in the security filter chain *and* re-checked in services. | v1 ✅ |
 | Approach cost | Signal Budget, no free text before reveal, a daily cap on incoming signals shown in the digest | v1 ✅ |
+| Engagement ethics | No dark patterns (CCPA 2023, DSA Art. 25): no streak loss, false urgency, bait notifications, infinite feeds or public metrics. Connection Warmth replaces streaks (`05-engagement-psychology.md` §4). | v1 ✅ |
 | Exit | Soft exit, one-tap block (propagates across discovery, signals and chat) | v1 ✅ |
 | Reports | Categories mapped to documented harms (§31.2). **`UNDERAGE_SUSPECTED` routes to P0**, along with non-consensual intimate imagery and threats. | v1 ✅ (queue), ops in M2 |
 | Behavioural | Pacing Guardian, Empathy Mirror | v2 |

@@ -2,8 +2,15 @@ package oneday.moments;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Collection;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
+import java.util.function.Predicate;
+import java.util.stream.Collectors;
 
 import oneday.common.ApiException;
 import oneday.common.ProductMetrics;
@@ -19,6 +26,7 @@ import oneday.media.MediaKind;
 import oneday.media.MediaService;
 import oneday.profile.ActivityTags;
 import oneday.profile.ProfileService;
+import oneday.prompts.PromptCatalog;
 import oneday.safety.BlockChecker;
 
 import org.springframework.data.domain.PageRequest;
@@ -29,6 +37,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class MomentService {
 
 	private static final int MAX_CANDIDATES = 500;
+
+	/** A relay is a conversation in stories, not a pile-on: it closes after this many links. */
+	static final int MAX_RELAY_LENGTH = 30;
 
 	private final MomentRepository moments;
 
@@ -52,9 +63,12 @@ public class MomentService {
 
 	private final OneDayProperties.Moments settings;
 
+	private final PromptCatalog prompts;
+
 	public MomentService(MomentRepository moments, LocationService locations, ProfileService profiles,
 			ConnectionService connections, UserGuard guard, BlockChecker blocks, MediaService media, Clock clock,
-			OneDayProperties properties, ProductMetrics metrics, EventPublisher events) {
+			OneDayProperties properties, ProductMetrics metrics, EventPublisher events, PromptCatalog prompts) {
+		this.prompts = prompts;
 		this.metrics = metrics;
 		this.events = events;
 		this.moments = moments;
@@ -89,6 +103,17 @@ public class MomentService {
 				throw ApiException.conflict("MEDIA_ALREADY_USED", "That upload is already attached to a moment");
 			}
 		}
+		String promptKey = blankToNull(request.promptKey());
+		if (promptKey != null && !prompts.isTodays(userId, promptKey)) {
+			throw ApiException.unprocessable("PROMPT_NOT_TODAY", "That prompt has closed. Answer today's instead.");
+		}
+		Moment replyTo = null;
+		if (request.replyToMomentId() != null && !request.replyToMomentId().isBlank()) {
+			if (request.shareScope() != ShareScope.PUBLIC_DISCOVERY) {
+				throw ApiException.unprocessable("RELAY_MUST_BE_PUBLIC", "A relay answer is a public moment");
+			}
+			replyTo = requireRelayable(userId, request.replyToMomentId().trim());
+		}
 		GeoCell cell = null;
 		if (request.shareScope() == ShareScope.PUBLIC_DISCOVERY) {
 			if (!isText && !request.isCapturedLive()) {
@@ -98,13 +123,24 @@ public class MomentService {
 			cell = locations.requireCurrentCell(userId);
 		}
 		Instant now = clock.instant();
-		Moment moment = moments.save(new Moment(userId, request.kind(), blankToNull(request.caption()),
+		Moment draft = new Moment(userId, request.kind(), blankToNull(request.caption()),
 				ActivityTags.normalize(request.activityTag()), blankToNull(request.mediaRef()),
 				request.isPreviewAllowed(), request.shareScope(), isText || request.isCapturedLive(), cell, now,
-				now.plus(settings.ttl())));
+				now.plus(settings.ttl()));
+		if (promptKey != null) {
+			draft.answerPrompt(promptKey);
+		}
+		if (replyTo != null) {
+			draft.joinRelay(replyTo);
+		}
+		Moment moment = moments.save(draft);
 		metrics.momentPublished(moment.getKind());
 		events.publish(new DomainEvent.MomentPublished(moment.getId(), userId, moment.getKind().name(),
 				moment.getShareScope().name()));
+		if (replyTo != null) {
+			events.publish(new DomainEvent.RelayJoined(moment.getId(), moment.getRelayRootId(), userId,
+					replyTo.getOwnerId()));
+		}
 		return full(moment, profiles.require(userId).firstName());
 	}
 
@@ -133,6 +169,62 @@ public class MomentService {
 			return MomentView.ambient(moment, firstName, previewUrl(moment));
 		}
 		throw ApiException.notFound("Moment");
+	}
+
+	/**
+	 * Story Relay: the public moments that answered one another, in order. Each viewer sees the links they
+	 * may see (the same rule as a single moment: Layer 0 for strangers who still share location, nothing for
+	 * blocked pairs), so a relay never leaks who is in it.
+	 */
+	@Transactional(readOnly = true)
+	public RelayView relay(String viewerId, String momentId) {
+		view(viewerId, momentId); // the same visibility rule as opening the moment itself
+		Moment moment = moments.findById(momentId).orElseThrow(() -> ApiException.notFound("Moment"));
+		String rootId = moment.getRelayRootId() != null ? moment.getRelayRootId() : moment.getId();
+		Instant now = clock.instant();
+		List<Moment> chain = new ArrayList<>();
+		moments.findById(rootId).filter(m -> m.isLive(now)).ifPresent(chain::add);
+		chain.addAll(moments.findByRelayRootIdAndExpiresAtAfterOrderByRelayDepthAscCreatedAtAsc(rootId, now,
+				PageRequest.of(0, MAX_RELAY_LENGTH)));
+		Set<String> blocked = blocks.blockedEitherWay(viewerId);
+		Set<String> owners = chain.stream().map(Moment::getOwnerId).collect(Collectors.toSet());
+		Set<String> reachable = guard.reachableAmong(owners);
+		Set<String> sharing = locations.currentCells(owners).keySet();
+		Set<String> connected = connections.connectedUserIds(viewerId);
+		List<RelayLink> links = chain.stream().filter(m -> {
+			String owner = m.getOwnerId();
+			return owner.equals(viewerId) || connected.contains(owner)
+					|| (!blocked.contains(owner) && reachable.contains(owner) && sharing.contains(owner));
+		}).map(m -> new RelayLink(m.getId(), profiles.require(m.getOwnerId()).firstName(), m.getKind(),
+				m.getActivityTag(), previewUrl(m), m.isCapturedLive(), m.getRelayDepth(),
+				m.getOwnerId().equals(viewerId))).toList();
+		String activity = chain.isEmpty() ? null : chain.get(0).getActivityTag();
+		boolean open = chain.size() < MAX_RELAY_LENGTH;
+		return new RelayView(rootId, activity, links.size(), open, links);
+	}
+
+	/** How many live answers each relay root has (for the Story Map and the Local Pulse). */
+	@Transactional(readOnly = true)
+	public Map<String, Long> relayCounts(Collection<String> rootIds) {
+		if (rootIds.isEmpty()) {
+			return Map.of();
+		}
+		Map<String, Long> counts = new HashMap<>();
+		for (Object[] row : moments.countRelays(rootIds, clock.instant())) {
+			counts.put((String) row[0], (Long) row[1]);
+		}
+		return counts;
+	}
+
+	/** The person's own live answers to a prompt. */
+	@Transactional(readOnly = true)
+	public List<Moment> answersBy(String userId, String promptKey) {
+		return moments.findByOwnerIdAndPromptKeyAndExpiresAtAfter(userId, promptKey, clock.instant());
+	}
+
+	@Transactional(readOnly = true)
+	public List<Moment> liveBy(String userId) {
+		return moments.findByOwnerIdAndExpiresAtAfterOrderByCreatedAtDesc(userId, clock.instant());
 	}
 
 	@Transactional(readOnly = true)
@@ -179,6 +271,38 @@ public class MomentService {
 		return moments.findByOwnerIdOrderByCreatedAtDesc(userId);
 	}
 
+	/**
+	 * Retention: a story lasts a day, and its row (with the capture cell) is deleted once it has been expired
+	 * for a while, so no location history builds up. Owners for whom {@code held} is true (a safety hold)
+	 * keep theirs as evidence. Returns how many were deleted.
+	 */
+	@Transactional
+	public int purgeExpired(Instant expiredBefore, Predicate<String> held) {
+		List<Moment> stale = moments.findByExpiresAtBefore(expiredBefore, PageRequest.of(0, 1000));
+		Map<String, Boolean> holds = new HashMap<>();
+		int purged = 0;
+		for (Moment m : stale) {
+			if (!holds.computeIfAbsent(m.getOwnerId(), held::test)) {
+				moments.delete(m);
+				media.discard(m.getMediaRef());
+				purged++;
+			}
+		}
+		return purged;
+	}
+
+	/** Answers the given relay roots ever received (live or expired), for the private recap. */
+	@Transactional(readOnly = true)
+	public long relayAnswersEver(Collection<String> rootIds) {
+		return rootIds.isEmpty() ? 0 : moments.countAllRelayAnswers(rootIds);
+	}
+
+	/** The person's own moments created in [from, to), live or expired (for their private recap). */
+	@Transactional(readOnly = true)
+	public List<Moment> createdBy(String userId, Instant from, Instant to) {
+		return moments.findByOwnerIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(userId, from, to);
+	}
+
 	@Transactional
 	public void deleteAllBy(String userId) {
 		moments.deleteByOwner(userId);
@@ -189,8 +313,37 @@ public class MomentService {
 		return moment.hasPreview() ? media.previewUrl(moment.getMediaRef()) : null;
 	}
 
+	private Moment requireRelayable(String userId, String replyToId) {
+		Moment target = requireLivePublic(replyToId);
+		String owner = target.getOwnerId();
+		if (owner.equals(userId)) {
+			throw ApiException.unprocessable("CANNOT_RELAY_SELF", "Relays are answered by other people");
+		}
+		if (blocks.isBlockedEitherWay(userId, owner) || guard.reachableAmong(List.of(owner)).isEmpty()
+				|| locations.currentCell(owner).isEmpty() || !connections.inCouple(List.of(userId, owner)).isEmpty()) {
+			throw ApiException.notFound("Moment");
+		}
+		String rootId = target.getRelayRootId() != null ? target.getRelayRootId() : target.getId();
+		boolean ownsRoot = moments.findById(rootId).map(r -> r.getOwnerId().equals(userId)).orElse(false);
+		if (ownsRoot || moments.existsByRelayRootIdAndOwnerId(rootId, userId)) {
+			throw ApiException.conflict("ALREADY_IN_RELAY", "You're already part of this relay");
+		}
+		if (target.getRelayDepth() + 1 >= MAX_RELAY_LENGTH) {
+			throw ApiException.conflict("RELAY_FULL", "This relay is complete. Start your own!");
+		}
+		return target;
+	}
+
 	private MomentView full(Moment moment, String firstName) {
 		return MomentView.full(moment, firstName, previewUrl(moment), media.viewUrl(moment.getMediaRef()));
+	}
+
+	/** A link in a relay, Layer 0 only. {@code position} 0 is the moment that started it. */
+	public record RelayLink(String momentId, String firstName, MomentKind kind, String activity, String previewUrl,
+			boolean liveCaptured, int position, boolean mine) {
+	}
+
+	public record RelayView(String relayId, String activity, int length, boolean open, List<RelayLink> links) {
 	}
 
 	private static String blankToNull(String value) {

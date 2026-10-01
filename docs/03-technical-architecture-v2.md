@@ -144,6 +144,15 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `POST/GET /dates/{id}/debrief` | | Mutual Debrief: only positive answers both gave are revealed; safety answers never are |
 | `GET /meeting-points?category=&radiusKm=` | | Safety-Verified Meeting Points near the caller's cell |
 | `GET /ledger?month=` | | The caller's private Real Value Ledger |
+| `GET /map/stories?scope=&activity=&todaysPrompt=` | | Story Map: public stories in adaptive k-anonymous clusters (§5.4) with Roots/Language/activity/prompt lenses and relay threads |
+| `GET /prompts/today` · `GET/POST /staff/prompts` (*moderator*) | | Today's Prompt (give-to-get unlock); staff schedule global or Roots prompts |
+| `POST /moments` with `promptKey` / `replyToMomentId` · `GET /moments/{id}/relay` | | Answer the prompt; join a Story Relay (public, one link per person, at most 30) |
+| `GET/POST/DELETE /staff/festivals` | *moderator* | Festival Seasons: dated windows (1–31 days) for one home region or everyone; they drive Today's Prompt and label Story Map clusters |
+| `GET /ledger/week` | | Weekly Recap: last week (local Monday–Sunday) as one highlight, a few facts and a kind ending |
+| `GET /wellbeing/check` · `POST /wellbeing/answer` | | The rare "was your time well spent?" guardrail question (about 1 in 50 person-days, at most once per 14 days) |
+| `GET /staff/metrics/engagement?weeks=` | *admin* | Weekly Meaningful Actives and the well-spent share, per ISO week |
+| `POST /right-now` (**V**) · `GET /right-now` · `GET /right-now/mine` · `DELETE /right-now` | | Right Now (behind `oneday.right-now.enabled`, Gate 2): an activity for 30–120 min, shown at band precision |
+| `POST /right-now/{id}/join` (**V**) · `GET /right-now/requests` · `POST /right-now/requests/{id}/accept` (**V**) · `/decline` | | "I'm up for it too" (5/day, no free text); accepting creates the Connection, declining is silent |
 | `GET /staff/date-alerts` · `POST /staff/date-alerts/{dateId}/{userId}/resolve` · `POST/DELETE /staff/meeting-points` | *moderator* | Date Mode alert desk (reads audited) and Meeting Point curation |
 | `GET /staff/events/dead` · `POST /staff/events/{id}/requeue` | *admin* | Outbox dead-letter queue |
 | `GET /staff/verification-queue` · `POST /staff/verification/{userId}/decision` | *moderator* | Manual review: `APPROVE`, `RETRY`, or `REJECT` (also suspends the account) |
@@ -202,12 +211,21 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
    - If the target is inside one of their **Safe Zones** (the geohash-5 prefix matches), the result is always `NEARBY_AREA` with no direction.
 7. **Heat:** group live public moments by geohash-5 parent and activity. Emit a cell only when the number of **distinct owners ≥ k**, with a level of `LOW`/`ACTIVE`/`BUSY` (never exact counts).
 
+### 5.4 Story Map clustering (k-anonymity for places)
+A story carries its **capture cell** (geohash-6). The map never places an individual:
+1. **Neighbourhood clusters** (radius lens only): a cell is emitted only if **≥ `neighbourhood-k` (3) distinct people** posted there.
+2. **Area clusters:** the remaining stories roll up to their geohash-5 parent, which is emitted only with **≥ `area-k` (2) distinct people**.
+3. **Unplaced shelf:** anything else, plus every story captured inside its owner's Safe Zone, goes to "around your city" with no coordinates.
+4. City, Roots and Language lenses start at step 2, so wider reach means coarser placement.
+
+Cluster coordinates are cell or area *centres*. Counts are capped at "9+". The viewer's own stories, and those of blocked people, are left out *before* clustering, so a block cannot be used to isolate someone. People who paused location, are unverified or are in Couple Mode are left out too.
+
 ### 5.3 Residual risk (stated honestly)
 Someone who is physically present, or who probes slowly across days, can learn which ~0.73 km² cell a target is in while that target is sharing location. This is the product's accepted floor, and it is the same order of precision as "neighbourhood". Users who need more protection have **Safe Zones** and **pause**. M2 adds device attestation, which raises the cost of GPS spoofing further.
 
 ---
 
-## 6. Data model (Flyway `V1`–`V13`)
+## 6. Data model (Flyway `V1`–`V18`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -232,6 +250,11 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `connections` couple columns (V11) | `couple_a`, `couple_b`, `couple_since` | Private per side, like spark flags |
 | `ledger_entries` (V12) | `user_id`, `kind`, `occurred_at`, UQ(`user_id`, `kind`, `source_event_id`) | Read model; the unique key keeps the projection exactly-once |
 | `meeting_points` · `date_plans` · `date_participants` (V13) | venue + coordinates · plan state machine with `row_version` · per-person consent, current point, check-in, escalation, trusted contact, token hash, debrief | Positions, contacts and tokens are purged 2 h after a plan closes (an open escalation keeps them up to 7 days) |
+| `daily_prompts` (V14); `moments.prompt_key`, `relay_root_id`, `reply_to_id`, `relay_depth`; `profiles.country_code` | prompt date + optional home region · relay links · ISO country | Prompts per local date; the country picks the emergency number |
+| `users.reverify_reminded_at` (V15) | status `EXPIRED` | Liveness re-check every 90 days; one reminder 7 days before |
+| `weekly_actives` · `wellbeing_answers` (V16) | PK(`user_id`, `week_start`) · `well_spent` | North-star projection from events (two-way conversations are counted from `messages`) and the guardrail answers |
+| `festival_seasons` (V17) | `name`, `home_region`, `starts_on`, `ends_on`, `prompt_text` | Entered per year (lunar dates move); prompt keys `f:<id>:<yyyymmdd>` |
+| `right_now_sessions` · `right_now_joins` (V18) | activity + time box · UQ(`session_id`, `joiner_id`), status | Feature-flagged until Gate 2 |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 
 ---
@@ -264,6 +287,7 @@ PENDING ──reveal──► REVEALED  (Connection + Conversation created atomi
 | IT Rules: grievance officer, takedown SLAs (some 2–3 h) | Staff console: priority queue with due times (P0 2 h) and overdue flags, suspension, append-only audit trail ✅. Grievances (rule 3(2)): published officer contact, acknowledgement on filing, 24 h for intimate imagery, 72 h for content removal and 15 days otherwise, appeals from suspended accounts, and escalation to the Grievance Appellate Committee ✅. On-call rota still to come. | M2 ✅ |
 | Photo metadata (location in EXIF, MP4 location atoms) | The media worker re-encodes every upload without metadata before anything is served. Tests plant a GPS-like secret and assert it is gone. | M2 ✅ |
 | Date Mode exact location (the most sensitive data in the product) | Mutual consent per plan, inside the time box only, one overwritten point per person, stopped at plan close, purged after the after-care window. Never logged. A trusted contact sees only the sharer's side, through a hashed, expiring token. | M4 ✅ |
+| Story retention (no location history) | Expired story rows, with their capture cell, are deleted 14 days after expiry (`oneday.moments.retention-after-expiry`). Accounts under a safety hold keep theirs as evidence. | M2 ✅ |
 | Evidence retention vs. erasure (POCSO; IT Rules 2021 Rule 3(1)(g), 180 days) | Erasure is deferred while an open P0 report exists or within 180 days of an enforcement action. The account is hidden and its identifiers released at once, with no tip-off, and it is erased automatically when the hold lifts. | M2 ✅ |
 | IT Rules 2026 SGI labelling | Live-capture-only Discovery Mode. Labelled lenses in Friend Mode. SGI declaration for any future upload path. | M1 (capture flag) / M2 (client attestation) |
 | POCSO mandatory reporting | Evidence-preservation hold on P0 reports, counsel-designed reporting SOP | Before public launch |

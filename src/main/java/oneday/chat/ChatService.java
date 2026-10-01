@@ -3,9 +3,15 @@ package oneday.chat;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import oneday.common.ApiException;
 import oneday.connections.Connection;
@@ -124,6 +130,33 @@ public class ChatService {
 			return 0;
 		}
 		return messages.findActiveConversations(conversationIds, from, to, minMessages).size();
+	}
+
+	/**
+	 * Days since {@code since} on which both people wrote (in {@code zone}), and how many days have passed
+	 * since the last message. Inputs for Connection Warmth, never shown as numbers.
+	 */
+	@Transactional(readOnly = true)
+	public Rhythm rhythm(String conversationId, Instant since, ZoneId zone) {
+		Map<LocalDate, Set<String>> writersByDay = new HashMap<>();
+		Instant last = null;
+		for (Object[] row : messages.findSendersSince(conversationId, since, PageRequest.of(0, 2000))) {
+			Instant at = (Instant) row[1];
+			writersByDay.computeIfAbsent(at.atZone(zone).toLocalDate(), d -> new HashSet<>()).add((String) row[0]);
+			last = last == null || at.isAfter(last) ? at : last;
+		}
+		int mutualDays = (int) writersByDay.values().stream().filter(w -> w.size() >= 2).count();
+		return new Rhythm(mutualDays, last);
+	}
+
+	/** Everyone who had a two-way conversation in [from, to): an input to Weekly Meaningful Actives. */
+	@Transactional(readOnly = true)
+	public Set<String> twoWayWriters(Instant from, Instant to) {
+		return new HashSet<>(messages.findTwoWayWriters(from, to));
+	}
+
+	/** {@code lastMessageAt} is null when nothing was written in the window. */
+	public record Rhythm(int mutualDays, Instant lastMessageAt) {
 	}
 
 	@Transactional(readOnly = true)

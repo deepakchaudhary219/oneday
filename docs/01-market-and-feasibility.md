@@ -16,6 +16,7 @@
 | Is liveness verification a differentiator? | **No, not anymore.** Tinder has made Face Check mandatory for new users in several markets, **India included**. Verification is now the minimum users expect. Differentiation has to come from what is built on top of it: Trusted Vouch, human-verified capture, and graded location precision. |
 | Is it technically feasible? | **Yes, if v1 is scoped tightly.** Everything in v1 can be built with standard components. The hardest problems are location privacy (§4.1), moderation SLAs, and cold-start density. Language and framework are not the hard part. |
 | Is the full 47-section spec feasible as a launch? | **No.** The original documents already say this (§21.7). This document narrows v1 further and moves Date Mode *earlier*, because dating is now an explicit feature. |
+| How do we win and go global? | Own a new category, **"meet the people around you"**, through four wedges: Roots, women-safe approach, the Story Map with Today's Prompt, and dating without the deck. One global product from day one; marketing starts in India and follows Roots communities abroad (§6). |
 | Biggest risk | **Cold-start liquidity** (not enough of the right people in one place), followed by **trust-and-safety operating cost** under India's 2026 takedown timelines. |
 
 ---
@@ -116,6 +117,61 @@ Features keep users once they arrive. They do not bring users in (blueprint §41
 
 ---
 
+## 6. Positioning to win: global product, India-first launch
+
+### 6.1 Category: "the meet-new-people layer"
+We do not try to out-Snapchat Snapchat at *messaging friends*, or to out-swipe Tinder. We create and own a category that neither can enter without breaking its business model (§2.3):
+
+> **OneDay is where you meet the people around you: friends, dates and your people from home. It's safe by design, and it's alive every day.**
+
+| | Snapchat / Instagram | Tinder / Bumble / Hinge | **OneDay** |
+|---|---|---|---|
+| Who you meet | People you already know | Profiles in a deck | **People around you, through what they're doing right now** |
+| Map | Friends' locations, pins | None | **Story Map:** a k-anonymous, roots-aware living map of strangers' stories |
+| First contact | Open DMs (overload) | Match → free text | **Signal → Mutual Reveal** (no free text, no rejection sting) |
+| Content | Filtered, curated | Curated profile photos | **Live-captured only** for strangers (anti-catfish, SGI-compliant) |
+| Dating | Not the product | The whole product | **Private Dating Lens + Mutual Spark + Date Mode safety** |
+| Daily reason to open | Streak anxiety, friends | Swipes, "who liked you" paywall | **Today's Prompt, Local Pulse, relays, real signals** |
+| Success metric | Time spent | Matches and subscriptions | **Real connections** (Weekly Meaningful Actives) |
+
+### 6.2 Four wedges, in launch order
+1. **Roots (belonging):** migrants, students and new joiners in big cities. In India that means 40–60 crore internal migrants (§2.2). Globally it means international students, expats and diasporas: a Malayali in Dubai, a Nigerian in London, a Brazilian in Lisbon. **Roots is the reason OneDay works anywhere from day one**: every big city is full of people from somewhere else.
+2. **Women-safe approach:** Signal Budget, no free text before a reveal, mutual-only reveals and sparks, Date Mode with a trusted contact and one-tap emergency numbers by country. Women decide whether a social-discovery product survives. We win them first.
+3. **The Story Map and Today's Prompt:** a daily, city-wide ritual that is visible on a map and safe for strangers (docs/05 §3). This is the shareable "wow" for growth.
+4. **Dating without the deck:** for the swipe-fatigued (§2.1), dating happens *inside* a social product, which reduces the stigma and the burnout.
+
+### 6.3 Global from day one, marketed India-first
+- **Product:**
+  - one global build, with time zones, countries and emergency numbers per user;
+  - Roots and language lenses that work in any city;
+  - region-configurable compliance (DPDP, GDPR / DSA, US state laws), designed once to the strictest standard (docs/05 §0);
+  - data residency per region (India in Mumbai/Hyderabad; others in their own region).
+- **Go-to-market:**
+  1. **Launch city:** Bengaluru (§5).
+  2. **Then** India's metros through Roots communities (each city's largest migrant groups).
+  3. **Then the diaspora bridge:** the same Roots communities in Dubai, Singapore, London, Toronto and the Bay Area, where Indian and South Asian diasporas are dense and already connected to the Indian launch.
+  4. **Then** non-Indian Roots communities in those same cities.
+
+  Expansion still follows the density gates (`04-implementation-plan.md` §5): marketing goes city by city even though the app is available everywhere.
+- **Pricing:** purchasing-power-adjusted (₹ via UPI Autopay in India; local currency elsewhere). Safety features are never paywalled anywhere.
+
+### 6.4 Why incumbents can't follow quickly (moats)
+| Moat | Why it holds |
+|---|---|
+| **Business model** | Snap and Meta monetise ads on a friend/follow graph; opening stranger discovery recreates the DM-overload and safety problems they already face. Match monetises anxiety ("who liked you", boosts), which our product refuses by design. |
+| **Privacy engineering** | Adaptive k-anonymous clustering, cell-snapped bands with stable jitter, probe budgets, Safe Zones and time-boxed exact location (Tech Arch v2 §5). This is years of trust work, not a feature flag. |
+| **Safety operations** | Date Mode alert desk, takedown SLAs, grievance redressal and evidence holds, built from day one. |
+| **Community density** | Roots communities are network effects *per city per region*. Once the Keralites of Bengaluru are here, they bring the next ones. |
+| **Brand** | "The app that's good for you" is credible only if it is built that way from day one. Incumbents' histories make it hard for them to claim. |
+
+### 6.5 Messaging (examples)
+- *"Meet the people around you. Safely."*
+- *"Your people, in your new city."* (Roots)
+- *"No swiping. No awkward first texts. Just real people, nearby, who chose you back."*
+- *"One prompt. One city. Every day."* (Today's Prompt)
+
+---
+
 ## Sources
 
 - Snap Newsroom: [Snapchat Hits 250 Million Monthly Active Users in India](https://newsroom.snap.com/india-mau-250m)
@@ -131,4 +187,6 @@ Features keep users once they arrive. They do not bring users in (blueprint §41
 - [DPDP Rules, 2025 (Wikipedia summary)](https://en.wikipedia.org/wiki/Digital_Personal_Data_Protection_Rules,_2025). EY: [DPDP Rules 2025 guide](https://www.ey.com/en_in/insights/cybersecurity/transforming-data-privacy-digital-personal-data-protection-rules-2025)
 - Freshfields: [MeitY's 2026 amendments to the IT Rules (SGI / deepfakes)](https://www.freshfields.com/en/our-thinking/blogs/technology-quotient/india-targets-deepfakes-and-ai-generated-content-key-changes-under-meitys-2026-102mjwn)
 - TechCrunch (Jul 2024): [Bumble and Hinge allowed stalkers to pinpoint users' locations down to 2 meters](https://techcrunch.com/2024/07/31/bumble-and-hinge-allowed-stalkers-to-pinpoint-users-locations-down-to-2-meters-researchers-say). Check Point Research: [Geolocation risks in modern dating apps](https://research.checkpoint.com/2024/the-illusion-of-privacy-geolocation-risks-in-modern-dating-apps/)
+- Central Consumer Protection Authority (India): *Guidelines for Prevention and Regulation of Dark Patterns, 2023* (notified 30 Nov 2023)
+- Regulation (EU) 2022/2065, *Digital Services Act*, Art. 25 (online interface design and organisation)
 - Drishti IAS: [India's Internal Migration](https://www.drishtiias.com/daily-updates/daily-news-analysis/india-s-internal-migration)

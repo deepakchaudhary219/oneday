@@ -41,6 +41,8 @@ public class User {
 
 	private Instant verifiedAt;
 
+	private Instant reverifyRemindedAt;
+
 	/** DPDP: which version of the privacy notice the user accepted, and when. */
 	@Column(nullable = false)
 	private String consentVersion;
@@ -86,6 +88,22 @@ public class User {
 	public void markVerified(Instant now) {
 		this.verificationStatus = VerificationStatus.VERIFIED;
 		this.verifiedAt = now;
+		this.reverifyRemindedAt = null;
+	}
+
+	/** The periodic re-check is due: contact actions stop until the next liveness check passes. */
+	public void expireVerification() {
+		if (verificationStatus == VerificationStatus.VERIFIED) {
+			this.verificationStatus = VerificationStatus.EXPIRED;
+		}
+	}
+
+	public void reverifyReminded(Instant now) {
+		this.reverifyRemindedAt = now;
+	}
+
+	public Instant getReverifyRemindedAt() {
+		return reverifyRemindedAt;
 	}
 
 	public void markManualReview() {
