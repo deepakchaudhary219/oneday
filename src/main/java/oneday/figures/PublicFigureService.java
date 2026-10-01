@@ -226,6 +226,12 @@ public class PublicFigureService {
 		follows.deleteBetween(a, b);
 	}
 
+	/** The approved figure's public identity, for other modules (AMA hosts). */
+	@Transactional(readOnly = true)
+	public Optional<FigureView> approved(String userId) {
+		return figures.findById(userId).filter(PublicFigure::isApproved).map(f -> FigureView.of(f, false));
+	}
+
 	/** The figure behind a handle, for blocking or reporting from their profile. */
 	@Transactional(readOnly = true)
 	public Optional<String> figureBehind(String viewerId, String handle) {

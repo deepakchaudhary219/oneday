@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import oneday.ama.AmaService;
 import oneday.calls.CallService;
 import oneday.capsules.TimeCapsuleService;
 import oneday.chat.ChatService;
@@ -124,6 +125,8 @@ public class PrivacyService {
 
 	private final PublicFigureService figures;
 
+	private final AmaService amas;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
@@ -133,7 +136,8 @@ public class PrivacyService {
 			VouchService vouches, PlusService plus, ConsentService consents,
 			PulseStatusService pulseStatuses, E2eeService e2ee,
 			CallService calls, TimeCapsuleService capsules,
-			ThreadService threads, SpotlightService spotlights, PublicFigureService figures, Clock clock,
+			ThreadService threads, SpotlightService spotlights, PublicFigureService figures,
+			AmaService amas, Clock clock,
 			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
 		this.rightNow = rightNow;
 		this.idempotency = idempotency;
@@ -148,6 +152,7 @@ public class PrivacyService {
 		this.threads = threads;
 		this.spotlights = spotlights;
 		this.figures = figures;
+		this.amas = amas;
 		this.clock = clock;
 		this.momentRetention = momentRetention;
 		this.wellbeing = wellbeing;
@@ -247,6 +252,7 @@ public class PrivacyService {
 		data.put("timeCapsules", capsules.export(userId));
 		data.put("threadPosts", threads.export(userId));
 		data.put("publicFigure", figures.export(userId));
+		data.put("amaQuestions", amas.export(userId));
 		return data;
 	}
 
@@ -325,6 +331,7 @@ public class PrivacyService {
 		threads.forget(userId);
 		spotlights.forget(userId);
 		figures.forget(userId);
+		amas.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
