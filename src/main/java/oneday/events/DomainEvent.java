@@ -39,6 +39,19 @@ public sealed interface DomainEvent {
 		}
 	}
 
+	/** Someone answered another person's public story with their own (a Story Relay link). */
+	record RelayJoined(String momentId, String relayRootId, String joinerId, String answeredOwnerId)
+			implements DomainEvent {
+
+		public String aggregateId() {
+			return relayRootId;
+		}
+
+		public List<String> userIds() {
+			return List.of(joinerId, answeredOwnerId);
+		}
+	}
+
 	/** A Signal was sent (Layer 1). */
 	record SignalSent(String signalId, String senderId, String recipientId) implements DomainEvent {
 

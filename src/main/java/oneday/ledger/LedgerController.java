@@ -15,8 +15,17 @@ public class LedgerController {
 
 	private final LedgerService ledger;
 
-	public LedgerController(LedgerService ledger) {
+	private final WeeklyRecap recap;
+
+	public LedgerController(LedgerService ledger, WeeklyRecap recap) {
 		this.ledger = ledger;
+		this.recap = recap;
+	}
+
+	/** Last week as a short private story: one highlight, a few facts, a kind ending. */
+	@GetMapping("/week")
+	public WeeklyRecap.RecapView lastWeek(@AuthenticationPrincipal Jwt jwt) {
+		return recap.lastWeek(jwt.getSubject());
 	}
 
 	/** The caller's own month ({@code 2026-09}; defaults to the current month in their time zone). */

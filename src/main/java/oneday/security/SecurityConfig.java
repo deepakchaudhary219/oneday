@@ -77,9 +77,11 @@ public class SecurityConfig {
 				.hasAuthority("SCOPE_admin")
 				.requestMatchers(HttpMethod.POST, "/moments", "/media/uploads", "/signals", "/signals/*/reveal",
 						"/conversations/*/messages", "/connections/*/spark",
-						"/connections/*/couple", "/dates", "/dates/*/accept")
+						"/connections/*/couple", "/dates", "/dates/*/accept",
+						"/right-now", "/right-now/*/join", "/right-now/requests/*/accept")
 				.hasAuthority(VERIFIED)
-				.requestMatchers("/staff/members/**", "/staff/audit", "/staff/accounts/**", "/staff/events/**")
+				.requestMatchers("/staff/members/**", "/staff/audit", "/staff/accounts/**", "/staff/events/**",
+						"/staff/metrics/**")
 				.hasAuthority("SCOPE_admin")
 				.requestMatchers("/staff/**").hasAuthority("SCOPE_moderator")
 				.anyRequest().authenticated())

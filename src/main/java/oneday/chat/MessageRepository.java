@@ -36,6 +36,12 @@ public interface MessageRepository extends JpaRepository<Message, String> {
 	List<Object[]> findSendersSince(@Param("conversationId") String conversationId, @Param("since") Instant since,
 			Pageable page);
 
+	/** People who wrote in a conversation where the other person also wrote, within [from, to). */
+	@Query("select distinct m.senderId from Message m where m.createdAt >= :from and m.createdAt < :to and exists "
+			+ "(select o.id from Message o where o.conversationId = m.conversationId and o.senderId <> m.senderId "
+			+ "and o.createdAt >= :from and o.createdAt < :to)")
+	List<String> findTwoWayWriters(@Param("from") Instant from, @Param("to") Instant to);
+
 	@Modifying
 	@Query("delete from Message m where m.conversationId in :conversationIds")
 	void deleteByConversationIds(@Param("conversationIds") Collection<String> conversationIds);

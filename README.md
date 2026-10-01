@@ -45,6 +45,11 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
 - **Story Relays**: answer a stranger's public story with your own (`replyToMomentId`, `GET /moments/{id}/relay`).
 - **Connection Warmth** instead of streaks: no countdown and no loss; conversation starters from shared context.
 - **Global from day one**: a country on the profile drives the emergency number on every safety surface.
+- **Festival Seasons**: Onam, Durga Puja, Eid and others drive the region's daily prompt and label the map.
+- **Weekly Recap** (`GET /ledger/week`): last week as one highlight, a few facts and a kind ending.
+- **Right Now** (off until density Gate 2; `ONEDAY_RIGHT_NOW=true`): "up for badminton for the next hour", with a consent-only connection.
+- **Honest measurement**: Weekly Meaningful Actives (`GET /staff/metrics/engagement`) and a rare "was your time well spent?" check.
+- **Re-verification every 90 days**, and expired stories deleted 14 days after expiry, so no location history builds up.
 
 **Milestone 4 (dating-ready v1.5) so far:**
 - **Date Mode:** plans between Connections, exact location that is time-boxed and needs both people's consent, a trusted contact with a private live link, "Going OK?" check-ins that escalate, one-tap SOS (112), "home safe" end-of-date confirmation, and a Trust & Safety alert desk.
@@ -88,6 +93,7 @@ Any other deployment **must** set:
 | `ONEDAY_GRIEVANCE_OFFICER_NAME` / `_EMAIL` / `_ADDRESS` | The Grievance Officer's published contact (IT Rules 3(2), DPDP), served at `GET /grievances/officer`. Required before launch. |
 | `MANAGEMENT_SERVER_PORT` | An internal-only port (e.g. `8081`) for health probes and Prometheus scraping (`/actuator/prometheus`, token-free only there). Without it, metrics need an admin token. |
 | `ONEDAY_PUBLIC_URL` | Public HTTPS base of the API, used in the private link texted to a Date Mode trusted contact (`/date-share/…`) |
+| `ONEDAY_RIGHT_NOW` | `true` turns on Right Now. Leave it off until a city meets density Gate 2 (`docs/04` §5). |
 | `ONEDAY_API_DOCS` | `true` publishes `/v3/api-docs` and Swagger UI. Off by default outside the `dev` profile. |
 | `ONEDAY_BOOTSTRAP_ADMIN_IDS` | Comma-separated **user ids** that act as the first Trust & Safety admins. Take the id from the `sub` of your own token. Ids, not emails: emails aren't ownership-verified yet. |
 

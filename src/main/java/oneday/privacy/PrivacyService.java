@@ -1,5 +1,7 @@
 package oneday.privacy;
 
+import java.time.Clock;
+import java.time.Duration;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -20,12 +22,15 @@ import oneday.media.MediaService;
 import oneday.moments.MomentService;
 import oneday.notify.NotificationService;
 import oneday.profile.ProfileService;
+import oneday.rightnow.RightNowService;
 import oneday.safety.SafetyService;
 import oneday.security.SessionService;
 import oneday.signals.SignalService;
 import oneday.staff.StaffDirectory;
 import oneday.verification.VerificationService;
+import oneday.wellbeing.WellbeingService;
 
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -75,11 +80,25 @@ public class PrivacyService {
 
 	private final DateService dates;
 
+	private final WellbeingService wellbeing;
+
+	private final Clock clock;
+
+	private final Duration momentRetention;
+
+	private final RightNowService rightNow;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
 			AccountAdministration administration, NotificationService notifications, SessionService sessions,
-			GrievanceService grievances, LedgerService ledger, EventOperations events, DateService dates) {
+			GrievanceService grievances, LedgerService ledger, EventOperations events, DateService dates,
+			WellbeingService wellbeing, RightNowService rightNow, Clock clock,
+			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
+		this.rightNow = rightNow;
+		this.clock = clock;
+		this.momentRetention = momentRetention;
+		this.wellbeing = wellbeing;
 		this.dates = dates;
 		this.ledger = ledger;
 		this.events = events;
@@ -160,6 +179,10 @@ public class PrivacyService {
 			.stream()
 			.map(e -> row("outcome", e.getKind(), "at", e.getOccurredAt()))
 			.toList());
+		data.put("wellbeingAnswers", wellbeing.answersBy(userId)
+			.stream()
+			.map(a -> row("wellSpent", a.isWellSpent(), "at", a.getCreatedAt()))
+			.toList());
 		data.put("verificationAttempts", verification.attemptsBy(userId)
 			.stream()
 			.map(a -> row("outcome", a.getOutcome(), "at", a.getCreatedAt()))
@@ -182,9 +205,19 @@ public class PrivacyService {
 			locations.forget(userId);
 			connections.endAllFor(userId);
 			dates.cancelAllFor(userId);
+			rightNow.stop(userId);
 			return;
 		}
 		eraseNow(userId);
+	}
+
+	/**
+	 * Expired stories are deleted {@code momentRetention} after they expire (their capture cell with them),
+	 * except for accounts under a safety hold, whose records are evidence.
+	 */
+	@Scheduled(fixedDelayString = "PT1H", initialDelayString = "${oneday.moments.purge-initial-delay:PT25M}")
+	public void purgeExpiredMoments() {
+		moments.purgeExpired(clock.instant().minus(momentRetention), owner -> safety.holdReason(owner).isPresent());
 	}
 
 	/** Finishes erasures that were deferred by a hold which has since lifted. */
@@ -218,6 +251,8 @@ public class PrivacyService {
 		sessions.forget(userId);
 		grievances.forget(userId);
 		ledger.forget(userId);
+		wellbeing.forget(userId);
+		rightNow.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);

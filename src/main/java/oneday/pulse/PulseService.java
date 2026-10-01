@@ -1,7 +1,10 @@
 package oneday.pulse;
 
 import java.time.Clock;
+import java.time.DayOfWeek;
 import java.time.Duration;
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Comparator;
 import java.util.List;
 
@@ -10,6 +13,7 @@ import oneday.discovery.DiscoveryService;
 import oneday.discovery.DiscoveryViews.HeatCell;
 import oneday.geo.LocationService;
 import oneday.identity.UserGuard;
+import oneday.ledger.WeeklyRecap;
 import oneday.moments.Moment;
 import oneday.moments.MomentService;
 import oneday.profile.Profile;
@@ -49,9 +53,12 @@ public class PulseService {
 
 	private final MomentService moments;
 
+	private final WeeklyRecap recap;
+
 	public PulseService(SignalService signals, ConnectionService connections, DiscoveryService discovery,
 			LocationService locations, ProfileService profiles, BlockChecker blocks, UserGuard guard, Clock clock,
-			PromptService prompts, MomentService moments) {
+			PromptService prompts, MomentService moments, WeeklyRecap recap) {
+		this.recap = recap;
 		this.prompts = prompts;
 		this.moments = moments;
 		this.signals = signals;
@@ -110,8 +117,12 @@ public class PulseService {
 		else {
 			headline = "Quiet around you today. That's okay.";
 		}
+		// Mondays (local): last week's private recap is ready to open, if there was anything in it.
+		boolean monday = LocalDate.now(clock.withZone(ZoneId.of(profile.getTimeZone()))).getDayOfWeek() == DayOfWeek.MONDAY;
+		boolean recapReady = monday && recap.lastWeek(userId).ready();
 		return new PulseView(headline, pendingLabel, newConnections, nearby, profile.getPulseHour(),
-				profile.isDiscretionMode(), today.text(), today.answeredNearby(), today.answeredByYou(), relayLabel);
+				profile.isDiscretionMode(), today.text(), today.answeredNearby(), today.answeredByYou(), relayLabel,
+				recapReady);
 	}
 
 	public record NearbyActivity(String activity, String level) {
@@ -123,6 +134,6 @@ public class PulseService {
 	 */
 	public record PulseView(String headline, String pendingSignals, long newConnectionsThisWeek,
 			List<NearbyActivity> nearbyActivity, int digestHour, boolean discretionMode, String todaysPrompt,
-			String promptAnsweredNearby, boolean promptAnsweredByYou, String relayAnswers) {
+			String promptAnsweredNearby, boolean promptAnsweredByYou, String relayAnswers, boolean weeklyRecapReady) {
 	}
 }

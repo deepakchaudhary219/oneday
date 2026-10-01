@@ -3,6 +3,7 @@ package oneday.prompts;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
 
@@ -59,36 +60,58 @@ public class PromptCatalog {
 			new Entry("Golden hour, wherever you are", null),
 			new Entry("Something you're grateful for today", null));
 
+	static final String FESTIVAL_PREFIX = "f:";
+
+	private static final DateTimeFormatter COMPACT_DATE = DateTimeFormatter.BASIC_ISO_DATE;
+
 	private final DailyPromptRepository scheduled;
+
+	private final FestivalSeasonRepository festivals;
 
 	private final ProfileService profiles;
 
 	private final Clock clock;
 
-	public PromptCatalog(DailyPromptRepository scheduled, ProfileService profiles, Clock clock) {
+	public PromptCatalog(DailyPromptRepository scheduled, FestivalSeasonRepository festivals, ProfileService profiles,
+			Clock clock) {
 		this.scheduled = scheduled;
+		this.festivals = festivals;
 		this.profiles = profiles;
 		this.clock = clock;
 	}
 
+	/**
+	 * Precedence: a prompt scheduled for the person's home region on that date, then a festival season for
+	 * their region, then a prompt scheduled for everyone, then a festival for everyone, then the catalogue.
+	 */
 	@Transactional(readOnly = true)
 	public Prompt todayFor(String userId) {
 		Optional<Profile> profile = profiles.find(userId);
 		ZoneId zone = profile.map(p -> ZoneId.of(p.getTimeZone())).orElse(ZoneId.of("UTC"));
 		LocalDate date = LocalDate.now(clock.withZone(zone));
 		String region = profile.map(Profile::getHomeRegion).orElse(null);
-		Optional<DailyPrompt> chosen = region == null ? Optional.empty()
-				: scheduled.findFirstByPromptDateAndHomeRegionOrderByCreatedAtDesc(date, region);
-		if (chosen.isEmpty()) {
-			chosen = scheduled.findFirstByPromptDateAndHomeRegionIsNullOrderByCreatedAtDesc(date);
+		List<FestivalSeason> active = festivals.findActiveOn(date);
+		if (region != null) {
+			Optional<DailyPrompt> roots = scheduled.findFirstByPromptDateAndHomeRegionOrderByCreatedAtDesc(date, region);
+			if (roots.isPresent()) {
+				return scheduledPrompt(roots.get(), date);
+			}
+			Optional<FestivalSeason> rootsFestival = active.stream().filter(f -> region.equals(f.getHomeRegion())).findFirst();
+			if (rootsFestival.isPresent()) {
+				return festivalPrompt(rootsFestival.get(), date);
+			}
 		}
-		if (chosen.isPresent()) {
-			DailyPrompt p = chosen.get();
-			return new Prompt(p.getId(), date, p.getText(), p.getActivityHint(), p.getHomeRegion() != null);
+		Optional<DailyPrompt> everyone = scheduled.findFirstByPromptDateAndHomeRegionIsNullOrderByCreatedAtDesc(date);
+		if (everyone.isPresent()) {
+			return scheduledPrompt(everyone.get(), date);
+		}
+		Optional<FestivalSeason> festival = active.stream().filter(f -> f.getHomeRegion() == null).findFirst();
+		if (festival.isPresent()) {
+			return festivalPrompt(festival.get(), date);
 		}
 		// Same catalogue prompt for everyone on the same local date, so a city answers together.
 		Entry entry = CATALOG.get((int) Math.floorMod(date.toEpochDay() * 7, CATALOG.size()));
-		return new Prompt(CATALOG_PREFIX + date, date, entry.text(), entry.activityHint(), false);
+		return new Prompt(CATALOG_PREFIX + date, date, entry.text(), entry.activityHint(), false, null);
 	}
 
 	/** Whether {@code key} is this person's prompt today (answers are accepted only on the day). */
@@ -96,11 +119,33 @@ public class PromptCatalog {
 		return key != null && key.equals(todayFor(userId).key());
 	}
 
+	/** The festival a prompt key belongs to, if it is a festival prompt (for Story Map labels). */
+	@Transactional(readOnly = true)
+	public Optional<String> festivalOf(String key) {
+		if (key == null || !key.startsWith(FESTIVAL_PREFIX)) {
+			return Optional.empty();
+		}
+		int end = key.indexOf(':', FESTIVAL_PREFIX.length());
+		String id = end < 0 ? key.substring(FESTIVAL_PREFIX.length()) : key.substring(FESTIVAL_PREFIX.length(), end);
+		return festivals.findById(id).map(FestivalSeason::getName);
+	}
+
+	private static Prompt scheduledPrompt(DailyPrompt p, LocalDate date) {
+		return new Prompt(p.getId(), date, p.getText(), p.getActivityHint(), p.getHomeRegion() != null, null);
+	}
+
+	/** One key per festival per day, so each day of a season is its own prompt (and fits the 48-char column). */
+	private static Prompt festivalPrompt(FestivalSeason f, LocalDate date) {
+		return new Prompt(FESTIVAL_PREFIX + f.getId() + ":" + COMPACT_DATE.format(date), date, f.getPromptText(),
+				f.getActivityHint(), f.getHomeRegion() != null, f.getName());
+	}
+
 	/**
 	 * @param key the handle a moment uses to answer it
 	 * @param roots true for a prompt aimed at the person's home region
+	 * @param festival the festival season this prompt belongs to, if any
 	 */
-	public record Prompt(String key, LocalDate date, String text, String activityHint, boolean roots) {
+	public record Prompt(String key, LocalDate date, String text, String activityHint, boolean roots, String festival) {
 	}
 
 	record Entry(String text, String activityHint) {

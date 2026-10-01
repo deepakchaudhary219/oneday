@@ -230,6 +230,16 @@ public class StoryMapService {
 		long people = distinctOwners(stories);
 		long fromHome = stories.stream().filter(s -> s.affinity().rootsMatch()).map(s -> s.owner().getUserId()).distinct().count();
 		boolean liveNow = stories.stream().anyMatch(s -> s.moment().getCreatedAt().isAfter(now.minus(LIVE_NOW)));
+		// A festival label when the cluster's stories answer a festival prompt ("Onam in this area").
+		String season = stories.stream()
+			.map(s -> s.moment().getPromptKey())
+			.filter(k -> k != null && k.startsWith("f:"))
+			.collect(Collectors.groupingBy(Function.identity(), Collectors.counting()))
+			.entrySet()
+			.stream()
+			.max(Map.Entry.comparingByValue())
+			.flatMap(e -> prompts.festivalOf(e.getKey()))
+			.orElse(null);
 		Double lat = null;
 		Double lon = null;
 		if (level != Level.CITY) {
@@ -248,7 +258,8 @@ public class StoryMapService {
 					s.affinity().explanation(m.getActivityTag()));
 		}).toList();
 		return new Cluster(id, level, lat, lon, cap(people), topActivities.isEmpty() ? null : topActivities.get(0),
-				topActivities, (int) Math.min(fromHome, 9), liveNow, cards, Math.max(0, stories.size() - cards.size()));
+				topActivities, (int) Math.min(fromHome, 9), liveNow, season, cards,
+				Math.max(0, stories.size() - cards.size()));
 	}
 
 	private static int relevance(List<Story> stories) {
@@ -312,7 +323,8 @@ public class StoryMapService {
 	 * {@code people} and {@code fromYourHomeRegion} are capped.
 	 */
 	public record Cluster(String id, Level level, Double centerLat, Double centerLon, String people, String vibe,
-			List<String> activities, int fromYourHomeRegion, boolean liveNow, List<StoryCard> stories, int more) {
+			List<String> activities, int fromYourHomeRegion, boolean liveNow, String season, List<StoryCard> stories,
+			int more) {
 	}
 
 	/** A Layer-0 story card. {@code momentId} opens it (Layer 0) or receives a Signal. */

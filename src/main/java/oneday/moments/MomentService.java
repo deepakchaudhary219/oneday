@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import oneday.common.ApiException;
@@ -136,6 +137,10 @@ public class MomentService {
 		metrics.momentPublished(moment.getKind());
 		events.publish(new DomainEvent.MomentPublished(moment.getId(), userId, moment.getKind().name(),
 				moment.getShareScope().name()));
+		if (replyTo != null) {
+			events.publish(new DomainEvent.RelayJoined(moment.getId(), moment.getRelayRootId(), userId,
+					replyTo.getOwnerId()));
+		}
 		return full(moment, profiles.require(userId).firstName());
 	}
 
@@ -264,6 +269,38 @@ public class MomentService {
 	@Transactional(readOnly = true)
 	public List<Moment> allBy(String userId) {
 		return moments.findByOwnerIdOrderByCreatedAtDesc(userId);
+	}
+
+	/**
+	 * Retention: a story lasts a day, and its row (with the capture cell) is deleted once it has been expired
+	 * for a while, so no location history builds up. Owners for whom {@code held} is true (a safety hold)
+	 * keep theirs as evidence. Returns how many were deleted.
+	 */
+	@Transactional
+	public int purgeExpired(Instant expiredBefore, Predicate<String> held) {
+		List<Moment> stale = moments.findByExpiresAtBefore(expiredBefore, PageRequest.of(0, 1000));
+		Map<String, Boolean> holds = new HashMap<>();
+		int purged = 0;
+		for (Moment m : stale) {
+			if (!holds.computeIfAbsent(m.getOwnerId(), held::test)) {
+				moments.delete(m);
+				media.discard(m.getMediaRef());
+				purged++;
+			}
+		}
+		return purged;
+	}
+
+	/** Answers the given relay roots ever received (live or expired), for the private recap. */
+	@Transactional(readOnly = true)
+	public long relayAnswersEver(Collection<String> rootIds) {
+		return rootIds.isEmpty() ? 0 : moments.countAllRelayAnswers(rootIds);
+	}
+
+	/** The person's own moments created in [from, to), live or expired (for their private recap). */
+	@Transactional(readOnly = true)
+	public List<Moment> createdBy(String userId, Instant from, Instant to) {
+		return moments.findByOwnerIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(userId, from, to);
 	}
 
 	@Transactional
