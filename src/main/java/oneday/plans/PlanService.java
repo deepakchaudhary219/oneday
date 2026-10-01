@@ -16,6 +16,7 @@ import java.util.Map;
 import java.util.Set;
 
 import oneday.common.ApiException;
+import oneday.common.RateLimiter;
 import oneday.connections.ConnectionService;
 import oneday.dates.MeetingPoint;
 import oneday.dates.MeetingPointService;
@@ -97,11 +98,14 @@ public class PlanService {
 
 	private final RealtimeService realtime;
 
+	private final RateLimiter rateLimiter;
+
 	public PlanService(PlanRepository plans, PlanMemberRepository members, PlanMessageRepository messages,
 			MeetingPointService meetingPoints, LocationService locations, ProfileService profiles,
 			ConnectionService connections, BlockChecker blocks, UserGuard guard, NotificationService notifications,
-			EventPublisher events, Clock clock, RealtimeService realtime) {
+			EventPublisher events, Clock clock, RealtimeService realtime, RateLimiter rateLimiter) {
 		this.realtime = realtime;
+		this.rateLimiter = rateLimiter;
 		this.plans = plans;
 		this.members = members;
 		this.messages = messages;
@@ -291,6 +295,9 @@ public class PlanService {
 		Plan plan = requireRoom(userId, planId);
 		if (!plan.isOpen(clock.instant())) {
 			throw ApiException.conflict("ROOM_CLOSED", "This plan is over");
+		}
+		if (!rateLimiter.tryAcquire("room:" + planId + ":" + userId, 10, Duration.ofMinutes(1))) {
+			throw ApiException.tooManyRequests("PACING_SLOW_DOWN", "Slow down a little. Messages land better one at a time.");
 		}
 		PlanMessage message = messages.save(new PlanMessage(planId, userId, body.strip(), clock.instant()));
 		String name = profiles.require(userId).firstName();

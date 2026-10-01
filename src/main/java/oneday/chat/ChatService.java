@@ -44,9 +44,13 @@ public class ChatService {
 
 	private final RealtimeService realtime;
 
+	private final PacingGuardian pacing;
+
 	public ChatService(ConversationRepository conversations, MessageRepository messages,
-			ConnectionService connections, UserGuard guard, BlockChecker blocks, Clock clock, RealtimeService realtime) {
+			ConnectionService connections, UserGuard guard, BlockChecker blocks, Clock clock, RealtimeService realtime,
+			PacingGuardian pacing) {
 		this.realtime = realtime;
+		this.pacing = pacing;
 		this.conversations = conversations;
 		this.messages = messages;
 		this.connections = connections;
@@ -74,12 +78,13 @@ public class ChatService {
 		if (!connection.isActive() || blocks.isBlockedEitherWay(userId, connection.otherThan(userId))) {
 			throw ApiException.conflict("CONVERSATION_INACTIVE", "This conversation is no longer active");
 		}
+		int streak = pacing.beforeSend(conversationId, userId);
 		Message message = messages.save(new Message(conversationId, userId, body.strip(), clock.instant()));
 		// Each side gets its own view (mine true/false), the sender's other devices included.
 		realtime.toUser(connection.otherThan(userId), "message",
 				new RealtimeMessage(conversationId, MessageView.of(message, connection.otherThan(userId))));
 		realtime.toUser(userId, "message", new RealtimeMessage(conversationId, MessageView.of(message, userId)));
-		return MessageView.of(message, userId);
+		return MessageView.of(message, userId).withHint(pacing.hintAfterSend(streak));
 	}
 
 	@Transactional(readOnly = true)
@@ -191,11 +196,16 @@ public class ChatService {
 	public record RealtimeMessage(String conversationId, MessageView message) {
 	}
 
-	public record MessageView(String id, boolean mine, String body, Instant sentAt) {
+	/** {@code pacingHint} is a private note for the sender only (Pacing Guardian), never part of history. */
+	public record MessageView(String id, boolean mine, String body, Instant sentAt, String pacingHint) {
 
 		static MessageView of(Message message, String viewerId) {
 			return new MessageView(message.getId(), message.getSenderId().equals(viewerId), message.getBody(),
-					message.getCreatedAt());
+					message.getCreatedAt(), null);
+		}
+
+		MessageView withHint(String hint) {
+			return new MessageView(id, mine, body, sentAt, hint);
 		}
 	}
 
