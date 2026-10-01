@@ -11,6 +11,8 @@ import java.util.regex.Pattern;
 
 import oneday.common.ApiException;
 import oneday.config.OneDayProperties;
+import oneday.consent.ConsentLedger;
+import oneday.consent.ConsentPurpose;
 import oneday.identity.User;
 import oneday.identity.UserGuard;
 import oneday.plus.Entitlements;
@@ -35,9 +37,12 @@ public class ProfileService {
 
 	private final Entitlements entitlements;
 
+	private final ConsentLedger consents;
+
 	public ProfileService(ProfileRepository profiles, UserGuard guard, Clock clock, OneDayProperties properties,
-			Entitlements entitlements) {
+			Entitlements entitlements, ConsentLedger consents) {
 		this.entitlements = entitlements;
+		this.consents = consents;
 		this.profiles = profiles;
 		this.guard = guard;
 		this.clock = clock;
@@ -74,6 +79,7 @@ public class ProfileService {
 	public ProfileView update(String userId, UpdateProfileRequest request) {
 		User user = guard.requireActive(userId);
 		Profile profile = require(userId);
+		affirmConsents(userId, request);
 		if (request.displayName() != null) {
 			profile.setDisplayName(request.displayName().trim());
 		}
@@ -154,9 +160,42 @@ public class ProfileService {
 		return profiles.findTimeZonesInUse();
 	}
 
+	/** DPDP withdrawal of {@code DATING_PREFERENCES}: the lens goes off and the private fields are deleted. */
+	@Transactional
+	public void clearDatingPreferences(String userId) {
+		profiles.findById(userId).ifPresent(profile -> {
+			profile.setDatingLens(false);
+			profile.setGender(null);
+			profile.setInterestedIn(new LinkedHashSet<>());
+			profile.touch(clock.instant());
+		});
+	}
+
+	/** DPDP withdrawal of {@code ROOTS_AND_LANGUAGES}. */
+	@Transactional
+	public void clearRootsAndLanguages(String userId) {
+		profiles.findById(userId).ifPresent(profile -> {
+			profile.setHomeRegion(null);
+			profile.setLanguages(new LinkedHashSet<>());
+			profile.touch(clock.instant());
+		});
+	}
+
 	@Transactional
 	public void delete(String userId) {
 		profiles.deleteById(userId);
+	}
+
+	/** Providing purpose-bound fields is the affirmative action that records consent (DPDP s.6(1)). */
+	private void affirmConsents(String userId, UpdateProfileRequest request) {
+		if (Boolean.TRUE.equals(request.datingLens()) || request.gender() != null
+				|| (request.interestedIn() != null && !request.interestedIn().isEmpty())) {
+			consents.affirm(userId, ConsentPurpose.DATING_PREFERENCES);
+		}
+		if ((request.homeRegion() != null && !request.homeRegion().isBlank())
+				|| (request.languages() != null && !request.languages().isEmpty())) {
+			consents.affirm(userId, ConsentPurpose.ROOTS_AND_LANGUAGES);
+		}
 	}
 
 	private static Set<String> normalizeLanguages(List<String> raw) {

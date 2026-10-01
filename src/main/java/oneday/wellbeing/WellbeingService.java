@@ -19,6 +19,8 @@ import io.micrometer.core.instrument.binder.MeterBinder;
 
 import oneday.chat.ChatService;
 import oneday.common.ApiException;
+import oneday.consent.ConsentLedger;
+import oneday.consent.ConsentPurpose;
 import oneday.identity.UserGuard;
 import oneday.staff.StaffDirectory;
 import oneday.staff.StaffRole;
@@ -57,8 +59,11 @@ public class WellbeingService implements MeterBinder {
 
 	private final Clock clock;
 
+	private final ConsentLedger consents;
+
 	public WellbeingService(WeeklyActiveRepository weekly, WellbeingAnswerRepository answers, ChatService chat,
-			UserGuard guard, StaffDirectory staff, WellbeingProperties settings, Clock clock) {
+			UserGuard guard, StaffDirectory staff, WellbeingProperties settings, Clock clock, ConsentLedger consents) {
+		this.consents = consents;
 		this.weekly = weekly;
 		this.answers = answers;
 		this.chat = chat;
@@ -75,7 +80,8 @@ public class WellbeingService implements MeterBinder {
 	public CheckView check(String userId) {
 		guard.requireActive(userId);
 		Instant now = clock.instant();
-		if (answers.existsByUserIdAndCreatedAtAfter(userId, now.minus(settings.minGap()))) {
+		if (consents.isWithdrawn(userId, ConsentPurpose.WELLBEING_SURVEY)
+				|| answers.existsByUserIdAndCreatedAtAfter(userId, now.minus(settings.minGap()))) {
 			return new CheckView(false, null);
 		}
 		CRC32 crc = new CRC32();
@@ -87,6 +93,7 @@ public class WellbeingService implements MeterBinder {
 	@Transactional
 	public AnswerView answer(String userId, boolean wellSpent) {
 		guard.requireActive(userId);
+		consents.affirm(userId, ConsentPurpose.WELLBEING_SURVEY);
 		Instant now = clock.instant();
 		if (answers.existsByUserIdAndCreatedAtAfter(userId, now.minus(settings.minGap()))) {
 			throw ApiException.conflict("ALREADY_ANSWERED", "Thanks, you've already told us recently");
@@ -139,6 +146,12 @@ public class WellbeingService implements MeterBinder {
 		people.addAll(chat.twoWayWriters(weekStart.atStartOfDay(ZoneOffset.UTC).toInstant(),
 				weekStart.plusWeeks(1).atStartOfDay(ZoneOffset.UTC).toInstant()));
 		return people.size();
+	}
+
+	/** DPDP withdrawal of {@code WELLBEING_SURVEY}: answers go; the interaction-based WMA record is not survey data. */
+	@Transactional
+	public void withdrawAnswers(String userId) {
+		answers.deleteByUserId(userId);
 	}
 
 	@Transactional

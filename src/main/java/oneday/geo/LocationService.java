@@ -10,6 +10,8 @@ import java.util.stream.Collectors;
 
 import oneday.common.ApiException;
 import oneday.config.OneDayProperties;
+import oneday.consent.ConsentLedger;
+import oneday.consent.ConsentPurpose;
 import oneday.identity.UserGuard;
 import oneday.profile.Profile;
 import oneday.profile.ProfileService;
@@ -39,8 +41,11 @@ public class LocationService {
 
 	private final OneDayProperties.Location settings;
 
+	private final ConsentLedger consents;
+
 	public LocationService(UserLocationRepository locations, ProfileService profiles, UserGuard guard,
-			ProbeBudget probeBudget, Clock clock, OneDayProperties properties) {
+			ProbeBudget probeBudget, Clock clock, OneDayProperties properties, ConsentLedger consents) {
+		this.consents = consents;
 		this.locations = locations;
 		this.profiles = profiles;
 		this.guard = guard;
@@ -52,6 +57,7 @@ public class LocationService {
 	@Transactional
 	public LocationView update(String userId, double rawLat, double rawLon) {
 		guard.requireActive(userId);
+		consents.affirm(userId, ConsentPurpose.LOCATION_DISCOVERY);
 		GeoCell next = GeoCell.snap(rawLat, rawLon);
 		Instant now = clock.instant();
 		Optional<UserLocation> existing = locations.findById(userId);
@@ -77,6 +83,15 @@ public class LocationService {
 		UserLocation location = existing.orElseGet(() -> new UserLocation(userId, next, now));
 		location.moveTo(next, now);
 		return view(locations.save(location));
+	}
+
+	/**
+	 * DPDP withdrawal of {@code LOCATION_DISCOVERY}: like {@link #pause} but allowed in any account state. The
+	 * probe budget is anti-abuse state, not discovery data, so withdrawing can't be used to reset it.
+	 */
+	@Transactional
+	public void withdraw(String userId) {
+		locations.deleteById(userId);
 	}
 
 	/** Stops sharing: deletes the stored cell, which removes the user from discovery at once. */

@@ -138,6 +138,15 @@ public class ConnectionService {
 		return CoupleView.of(connection, userId);
 	}
 
+	/**
+	 * DPDP withdrawal of {@code DATING_PREFERENCES}: the person's sparks and Couple Mode confirmations are
+	 * withdrawn on every connection. Silent, like switching a spark off by hand.
+	 */
+	@Transactional
+	public void withdrawSparks(String userId) {
+		connections.findByMember(userId).forEach(c -> c.setSpark(userId, false));
+	}
+
 	/** The subset of {@code userIds} currently in Couple Mode (hidden from, and not shown, Discovery). */
 	@Transactional(readOnly = true)
 	public Set<String> inCouple(Collection<String> userIds) {

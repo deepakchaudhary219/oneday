@@ -9,6 +9,7 @@ import java.util.Map;
 import oneday.chat.ChatService;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionService;
+import oneday.consent.ConsentService;
 import oneday.dates.DateService;
 import oneday.events.EventOperations;
 import oneday.geo.LocationService;
@@ -100,20 +101,22 @@ public class PrivacyService {
 
 	private final PlusService plus;
 
+	private final ConsentService consents;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
 			AccountAdministration administration, NotificationService notifications, SessionService sessions,
 			GrievanceService grievances, LedgerService ledger, EventOperations events, DateService dates,
 			WellbeingService wellbeing, RightNowService rightNow, IdempotencyStore idempotency, PlanService plans,
-			VouchService vouches, PlusService plus,
-			Clock clock,
+			VouchService vouches, PlusService plus, ConsentService consents, Clock clock,
 			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
 		this.rightNow = rightNow;
 		this.idempotency = idempotency;
 		this.plans = plans;
 		this.vouches = vouches;
 		this.plus = plus;
+		this.consents = consents;
 		this.clock = clock;
 		this.momentRetention = momentRetention;
 		this.wellbeing = wellbeing;
@@ -205,6 +208,7 @@ public class PrivacyService {
 			.stream()
 			.map(a -> row("outcome", a.getOutcome(), "at", a.getCreatedAt()))
 			.toList());
+		data.put("consentHistory", consents.history(userId));
 		return data;
 	}
 
@@ -275,6 +279,7 @@ public class PrivacyService {
 		plans.forget(userId);
 		vouches.forget(userId);
 		plus.forget(userId);
+		consents.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
