@@ -154,12 +154,13 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `GET /plans/{id}/requests` · `POST /plans/{id}/requests/{handle}/approve` (**V**) · `/decline` · `GET/POST /plans/{id}/room` | | Opaque request handles (no user ids); a silent decline; the members-only Room |
 | `POST /connections/{id}/vouch` (**V**) · `DELETE` · `GET /vouches/mine` | | Trusted Vouch; strangers see a capped count only |
 | `POST/DELETE /moments/{id}/keep` · `GET /moments/trail` | | Private Memory Trail (area-level location only) |
-| `WS /ws` (STOMP) | | Real time, receive-only: CONNECT with `Authorization: Bearer`; subscribe to `/user/queue/events` only. Events: `message`, `room`, `notice`, `date-location`, `pulse-status`, `pulse-status-cleared`, `e2ee` (an envelope is waiting; no content on the socket). |
+| `WS /ws` (STOMP) | | Real time, receive-only: CONNECT with `Authorization: Bearer`; subscribe to `/user/queue/events` only. Events: `message`, `room`, `notice`, `date-location`, `pulse-status`, `pulse-status-cleared`, `e2ee` (an envelope is waiting; no content on the socket), `call`, `call-signal`. |
 | `GET /plus` · `POST /plus/subscribe` · `POST /plus/cancel` · `POST /webhooks/razorpay` (public, HMAC-signed) | | OneDay Plus (convenience only); the webhook is idempotent by event id |
 | `POST /e2ee/devices` · `GET /e2ee/devices` · `DELETE /e2ee/devices/{id}` · `PUT /e2ee/devices/{id}/signed-prekey` · `POST /e2ee/devices/{id}/prekeys` | | Key directory for this sign-in's device: identity key, signed prekey, up to 200 one-time prekeys (keys are base64). At most 5 linked devices. |
 | `GET /e2ee/connections/{connectionId}/bundles` (**V**) · `GET /e2ee/devices/{id}/bundles` | | Prekey bundles for the other person's devices (per connection, 60/h) or your own other devices. Each one-time prekey is handed out once. |
 | `POST /conversations/{id}/encrypted` (**V**) · `GET /e2ee/devices/{id}/inbox` · `POST /e2ee/devices/{id}/inbox/ack` | | Encrypted send: `senderDevice`, franking `commitment`, and one envelope per device (`toSelf`, `deviceId`, `PREKEY`/`MESSAGE`, `ciphertext` ≤ 12 KB). The socket pings `e2ee`; the device pulls its inbox and acks, and acked envelopes are deleted. Undelivered ones go after 30 days. |
 | `POST /conversations/{id}/messages/{messageId}/report` | | Franked report of an encrypted message: `plaintext` + `frankingKey` must match the commitment (422 `FRANKING_MISMATCH` otherwise) |
+| `POST /connections/{id}/calls` (**V**) · `GET /calls/{id}` · `POST /calls/{id}/accept` · `/decline` · `/end` · `PUT /calls/{id}/layer` · `POST /calls/{id}/signal` · `GET /calls/ice-servers` | | Layered Video. Calls open once both people have chatted; 6 per hour per pair; one open call per person (`BUSY`). Each person sets `VOICE`/`BLURRED`/`CLEAR` and the call runs at the lower one. Signalling (`OFFER`/`ANSWER`/`ICE`, ≤ 16 KB) is relayed over the socket. Ringing ends as `MISSED` after 45 s and calls end after 3 h. A block ends the call. TURN uses coturn's shared-secret scheme. |
 | `GET /empathy/lexicon` | | The Empathy Mirror lexicon for on-device checks (ETag, 304 when unchanged) |
 | `PUT /pulse-status` · `GET /pulse-status/mine` · `DELETE /pulse-status` · `GET /pulse-status/friends` | | Pulse Status: mood, 1–3 emoji, note ≤ 60, optional Spotify track (stored as the track id, shown via the official embed). Friends-only, 24 h, 12 updates/hour. |
 | `GET /consents` · `POST /consents/{purpose}` · `DELETE /consents/{purpose}` · `GET /consents/history` | | DPDP consent per purpose (`LOCATION_DISCOVERY`, `DATING_PREFERENCES`, `ROOTS_AND_LANGUAGES`, `WELLBEING_SURVEY`), each with its notice and withdrawal effect. Withdrawal deletes the data in the same transaction; using it again gives 409 `CONSENT_WITHDRAWN` until it is granted again. |
@@ -248,7 +249,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V28`)
+## 6. Data model (Flyway `V1`–`V29`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -285,6 +286,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `subscriptions` · `payment_webhook_events` (V23) | provider subscription id UQ, status, `current_end`, `cancel_at_cycle_end` · applied webhook ids | Kept on erasure with `user_id` replaced (tax law) |
 | `consent_records` (V24) | `user_id`, `purpose`, `action` (`GRANTED`/`WITHDRAWN`), `notice_version`, `source` (`APP_ACTION`/`SETTINGS`); index (`user_id`, `purpose`, `created_at`) | Append-only; the latest row is the current state. Pseudonymised on erasure: proof of consent stays with the fiduciary (DPDP s.6(10)). |
 | `messages.tone_flag` · `plan_messages.tone_flag` (V26) | Empathy Mirror tone of a message sent anyway, or NULL | Drives the recipient's "does this bother you?" |
+| `calls` (V29) | caller, callee, `status`, `caller_wants` / `callee_wants`, `end_reason`, times | Metadata only (media is never recorded); purged 30 days after the call |
 | `e2ee_devices` · `e2ee_one_time_prekeys` · `e2ee_envelopes` (V28); `messages.encrypted`, `messages.franking_commitment`, `conversations.e2ee`, `reports.verified_evidence` | PK(`user_id`, `device_id`) + `session_id` · PK(`user_id`, `device_id`, `key_id`) · inbox index (`recipient_user_id`, `recipient_device_id`, `created_at`) | Public keys and ciphertext only. Prekeys are claimed by conditional DELETE. Envelopes are deleted on ack or after 30 days. All of it goes on erasure. |
 | `attestation_challenges` · `app_attest_keys` (V27) | challenge PK + `expires_at` · `key_id` PK, `public_key`, `sign_count`, `environment` | Challenges are consumed with one conditional DELETE, so each is single-use across replicas. The counter advances with a conditional UPDATE. |
 | `pulse_statuses` (V25) | PK `user_id`, `id` UQ (new on every update), `mood`, `emoji`, `note`, `spotify_track_id`, `expires_at` (indexed) | One per person; reads filter on expiry and a sweeper deletes expired rows |

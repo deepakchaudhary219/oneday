@@ -52,6 +52,7 @@ service (after commit) ── RealtimeService ──► memory: SimpMessagingTem
 - **Same auth as the API.** The socket uses the same JWT decoder and sign-in session check, and may subscribe only to `/user/queue/events`.
 - **Sockets don't outlive access.** A socket is closed at token expiry, and within 30 s of its session ending.
 - **Best effort by design.** A missed event is caught up on the next fetch; the database is the source of truth.
+- **Calls use the same path.** WebRTC offers, answers and ICE candidates are POSTed and relayed as `call-signal` events; the media itself flows peer-to-peer (or through TURN), never through the API.
 - **Next step at scale:** dedicated socket nodes behind the same Redis fan-out, or a managed pub/sub.
 
 ## 2b. End-to-end encrypted chat

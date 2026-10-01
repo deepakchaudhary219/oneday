@@ -142,6 +142,15 @@ public class ChatService {
 		return matches ? Optional.of(conversation.getConnectionId()) : Optional.empty();
 	}
 
+	/** Whether both people have written in this connection's conversation (calls open up after that). */
+	@Transactional(readOnly = true)
+	public boolean bothHaveWritten(Connection connection) {
+		return forConnection(connection.getId())
+			.map(c -> messages.existsByConversationIdAndSenderId(c.getId(), connection.getUserA())
+					&& messages.existsByConversationIdAndSenderId(c.getId(), connection.getUserB()))
+			.orElse(false);
+	}
+
 	@Transactional(readOnly = true)
 	public List<MessageView> history(String userId, String conversationId, Instant before, int limit) {
 		Conversation conversation = requireConversation(conversationId);

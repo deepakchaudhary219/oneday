@@ -102,6 +102,38 @@ class RealtimeIntegrationTest extends ApiTestSupport {
 	}
 
 	@Test
+	void anIncomingCallAndItsSignallingArriveLive() throws Exception {
+		String asha = verifiedUser("Asha");
+		String ravi = verifiedUser("Ravi");
+		String connection = connect(asha, ravi);
+		String conversation = JsonPath.read(body(getAs(asha, "/connections")), "$[0].conversationId");
+		postAs(asha, "/conversations/" + conversation + "/messages", "{\"body\":\"Call?\"}").andExpect(status().isCreated());
+		postAs(ravi, "/conversations/" + conversation + "/messages", "{\"body\":\"Yes\"}").andExpect(status().isCreated());
+		BlockingQueue<String> raviEvents = new LinkedBlockingQueue<>();
+		subscribe(ravi, raviEvents);
+		drain(raviEvents);
+
+		String call = JsonPath.read(body(postAs(asha, "/connections/" + connection + "/calls", null)
+			.andExpect(status().isCreated())), "$.id");
+		String ringing = raviEvents.poll(10, TimeUnit.SECONDS);
+		assertThat((String) JsonPath.read(ringing, "$.type")).isEqualTo("call");
+		assertThat((String) JsonPath.read(ringing, "$.data.direction")).isEqualTo("INCOMING");
+		assertThat((String) JsonPath.read(ringing, "$.data.id")).isEqualTo(call);
+
+		postAs(asha, "/calls/" + call + "/signal", "{\"kind\":\"OFFER\",\"payload\":\"v=0\"}")
+			.andExpect(status().isAccepted());
+		String offer = raviEvents.poll(10, TimeUnit.SECONDS);
+		assertThat((String) JsonPath.read(offer, "$.type")).isEqualTo("call-signal");
+		assertThat((String) JsonPath.read(offer, "$.data.payload")).isEqualTo("v=0");
+	}
+
+	private static void drain(BlockingQueue<String> queue) throws InterruptedException {
+		while (queue.poll(300, TimeUnit.MILLISECONDS) != null) {
+			// earlier events (chat) are not what this test is about
+		}
+	}
+
+	@Test
 	void socketsNeedAValidTokenAreReceiveOnlyAndCloseWhenTheSessionEnds() throws Exception {
 		assertThatThrownBy(() -> session("not-a-token")).isInstanceOf(ExecutionException.class);
 

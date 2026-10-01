@@ -84,7 +84,12 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
   - Once encrypted, a conversation never goes back to plaintext.
   - **Message franking** lets someone report an encrypted message with proof of exactly what was sent.
   - The Empathy Mirror runs on the device from `GET /empathy/lexicon`.
-- **Safety from every surface:** block or report by `momentId`, `signalId`, `connectionId`, `planId`, `roomMessageId`, `rightNowId`, `dateId` or `pulseStatusId`.
+- **Layered Video calls** (`POST /connections/{id}/calls`, `/calls/{id}/accept|decline|end|layer|signal`, `GET /calls/ice-servers`):
+  - calls open once both people have written in chat;
+  - every call starts as voice, and moves up to blurred then clear video only when both people are ready (the call runs at the lower of the two choices);
+  - either person can step down instantly;
+  - WebRTC media is peer-to-peer and never recorded; the server only relays signalling and issues 1-hour TURN credentials.
+- **Safety from every surface:** block or report by `momentId`, `signalId`, `connectionId`, `planId`, `roomMessageId`, `rightNowId`, `dateId`, `pulseStatusId` or `callId`.
 
 **Scale and platform** (see [`docs/06-system-design.md`](docs/06-system-design.md)):
 - Pushes and texts are sent after commit through the outbox, never inside a request.
@@ -140,6 +145,7 @@ Any other deployment **must** set:
 | `ONEDAY_PUSH_PROVIDER=fcm` + `oneday.google.credentials-file` | FCM HTTP v1 push (Android, and iOS via APNs) with a Google service-account key |
 | `ONEDAY_SMS_PROVIDER=msg91` + `ONEDAY_MSG91_AUTH_KEY`, `ONEDAY_MSG91_TEMPLATE_OTP` / `_TRUSTED_CONTACT` / `_SAFETY_ALERT` | DLT-compliant SMS via MSG91 templates |
 | `ONEDAY_ATTESTATION_MODE` (`off` / `monitor` / `enforce`) + `ONEDAY_ATTESTATION_PROVIDER=play-integrity` + `ONEDAY_ANDROID_PACKAGE` | Device attestation on signup, phone sign-in and location updates. The app takes a single-use challenge from `POST /attestation/challenges` and requests a Play Integrity token with `requestHash = base64url(SHA256(challenge + "\|" + action))`, then sends `X-Device-Integrity: play.<challenge>.<token>`. |
+| `ONEDAY_TURN_URLS` (comma-separated `turn:`/`turns:` URLs) + `ONEDAY_TURN_SECRET` (coturn `static-auth-secret`), `ONEDAY_STUN_URLS` | TURN relay for calls behind strict NATs. Credentials are minted per request and expire in an hour. |
 | `ONEDAY_APP_ATTEST=true` + `ONEDAY_APPLE_APP_ID` (`<Team ID>.<bundle id>`) + `ONEDAY_APP_ATTEST_ROOT_CA` (default `file:config/apple-app-attestation-root-ca.pem`; download [Apple's App Attestation Root CA](https://www.apple.com/certificateauthority/Apple_App_Attestation_Root_CA.pem) and check its fingerprint) | iOS App Attest alongside Play Integrity: `appattest.`-prefixed tokens go to Apple's checks, everything else to the Android provider. `ONEDAY_APP_ATTEST_ALLOW_DEVELOPMENT=true` accepts development-signed builds. |
 | `ONEDAY_EVENTS_TRANSPORT=kafka` / profile `kafka` + `KAFKA_BOOTSTRAP_SERVERS` | Kafka event transport instead of in-process delivery |
 | `oneday.datasource.replica.jdbc-url` / `.username` / `.password` | Optional MySQL read replica for opt-in heavy reads |

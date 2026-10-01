@@ -6,6 +6,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
+import oneday.calls.CallService;
 import oneday.chat.ChatService;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionService;
@@ -109,6 +110,8 @@ public class PrivacyService {
 
 	private final E2eeService e2ee;
 
+	private final CallService calls;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
@@ -116,7 +119,8 @@ public class PrivacyService {
 			GrievanceService grievances, LedgerService ledger, EventOperations events, DateService dates,
 			WellbeingService wellbeing, RightNowService rightNow, IdempotencyStore idempotency, PlanService plans,
 			VouchService vouches, PlusService plus, ConsentService consents,
-			PulseStatusService pulseStatuses, E2eeService e2ee, Clock clock,
+			PulseStatusService pulseStatuses, E2eeService e2ee,
+			CallService calls, Clock clock,
 			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
 		this.rightNow = rightNow;
 		this.idempotency = idempotency;
@@ -126,6 +130,7 @@ public class PrivacyService {
 		this.consents = consents;
 		this.pulseStatuses = pulseStatuses;
 		this.e2ee = e2ee;
+		this.calls = calls;
 		this.clock = clock;
 		this.momentRetention = momentRetention;
 		this.wellbeing = wellbeing;
@@ -221,6 +226,7 @@ public class PrivacyService {
 		data.put("pulseStatus", pulseStatuses.export(userId).orElse(null));
 		// Encrypted message text is on the person's devices only; the server holds public keys and metadata.
 		data.put("secureChatDevices", e2ee.export(userId));
+		data.put("calls", calls.export(userId)); // call metadata only: media is never recorded
 		return data;
 	}
 
@@ -294,6 +300,7 @@ public class PrivacyService {
 		consents.forget(userId);
 		pulseStatuses.forget(userId);
 		e2ee.forget(userId);
+		calls.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);

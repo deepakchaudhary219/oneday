@@ -272,4 +272,6 @@ Specified in `05-engagement-psychology.md`. All of it is subject to that documen
 
 | **End-to-end encrypted Friend Mode chat** (server side): key directory with session-bound devices; one-time prekeys claimed atomically; per-connection bundles; exact device coverage (409 with missing/stale); per-device inboxes deleted on ack; no downgrade; message franking with verified evidence on reports; on-device Empathy Mirror via a versioned lexicon; metadata kept for pacing and Weekly Meaningful Actives | `e2ee`, `chat`, `safety`, `staff`, `empathy`, `privacy` | ✅ (clients: libsignal) |
 
-**Verification:** 150 automated tests pass on H2 and MySQL 8.0, including a real WebSocket round trip and the Razorpay adapter against a local fake.
+| **Layered Video calls** (our reading of the v2 "Layered Video": Layered Reveal applied to calls): chat first; voice first; blurred and then clear video only as far as both people choose; instant step-down; WebRTC signalling relay; ephemeral TURN credentials; missed/timeout sweeps; block ends calls; reportable by `callId`; metadata purged after 30 days | `calls`, `chat`, `realtime`, `safety`, `privacy` | ✅ |
+
+**Verification:** 155 automated tests pass on H2 and MySQL 8.0, including a real WebSocket round trip and the Razorpay adapter against a local fake.

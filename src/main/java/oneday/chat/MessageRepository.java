@@ -19,6 +19,8 @@ public interface MessageRepository extends JpaRepository<Message, String> {
 
 	long countByConversationIdAndCreatedAtAfter(String conversationId, Instant since);
 
+	boolean existsByConversationIdAndSenderId(String conversationId, String senderId);
+
 	List<Message> findBySenderIdOrderByCreatedAtAsc(String senderId);
 
 	/**
