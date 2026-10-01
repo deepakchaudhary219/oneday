@@ -1,5 +1,6 @@
 package oneday.ledger;
 
+import oneday.platform.ReplicaReads;
 import oneday.ledger.LedgerService.LedgerView;
 
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -25,12 +26,12 @@ public class LedgerController {
 	/** Last week as a short private story: one highlight, a few facts, a kind ending. */
 	@GetMapping("/week")
 	public WeeklyRecap.RecapView lastWeek(@AuthenticationPrincipal Jwt jwt) {
-		return recap.lastWeek(jwt.getSubject());
+		return ReplicaReads.run(() -> recap.lastWeek(jwt.getSubject()));
 	}
 
 	/** The caller's own month ({@code 2026-09}; defaults to the current month in their time zone). */
 	@GetMapping
 	public LedgerView month(@AuthenticationPrincipal Jwt jwt, @RequestParam(required = false) String month) {
-		return ledger.month(jwt.getSubject(), month);
+		return ReplicaReads.run(() -> ledger.month(jwt.getSubject(), month));
 	}
 }

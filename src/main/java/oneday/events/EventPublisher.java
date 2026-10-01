@@ -44,10 +44,19 @@ public class EventPublisher {
 	}
 
 	DomainEvent read(OutboxEvent stored) {
-		Class<? extends DomainEvent> type = TYPES.get(stored.getEventType());
+		return decode(stored.getEventType(), stored.getPayload());
+	}
+
+	/** Serialises an event's payload (the catalogue's JSON form, shared by the outbox and the broker). */
+	public String encode(DomainEvent event) {
+		return json.writeValueAsString(event);
+	}
+
+	public DomainEvent decode(String eventType, String payload) {
+		Class<? extends DomainEvent> type = TYPES.get(eventType);
 		if (type == null) {
-			throw new IllegalStateException("Unknown event type " + stored.getEventType());
+			throw new IllegalStateException("Unknown event type " + eventType);
 		}
-		return json.readValue(stored.getPayload(), type);
+		return json.readValue(payload, type);
 	}
 }

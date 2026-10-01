@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 
 import oneday.common.ApiException;
+import oneday.events.DomainEvent;
+import oneday.events.EventPublisher;
 import oneday.identity.UserGuard;
 import oneday.notify.PushSender.PushMessage;
 import oneday.profile.Profile;
@@ -46,8 +48,12 @@ public class NotificationService {
 
 	private final Clock clock;
 
+	private final EventPublisher events;
+
 	public NotificationService(DeviceRepository devices, NoticeRepository notices, PulseDeliveryRepository deliveries,
-			ObjectProvider<PushSender> push, ProfileService profiles, UserGuard guard, Clock clock) {
+			ObjectProvider<PushSender> push, ProfileService profiles, UserGuard guard, Clock clock,
+			EventPublisher events) {
+		this.events = events;
 		this.devices = devices;
 		this.notices = notices;
 		this.deliveries = deliveries;
@@ -85,9 +91,23 @@ public class NotificationService {
 		devices.findByPushToken(pushToken).filter(d -> d.getUserId().equals(userId)).ifPresent(devices::delete);
 	}
 
-	/** Sends to all of the user's devices, rewritten neutrally if Discretion Mode is on. */
-	@Transactional(readOnly = true)
-	public int pushToUser(String userId, String title, String body, Map<String, String> data) {
+	/**
+	 * Queues a push in the caller's transaction (transactional outbox): it is sent only if the transaction
+	 * commits, after it commits, and retried if the provider fails. Request latency never includes push I/O.
+	 */
+	@Transactional
+	public void requestPush(String userId, String title, String body, Map<String, String> data) {
+		events.publish(new DomainEvent.PushRequested(userId, title, body, Map.copyOf(data)));
+	}
+
+	/**
+	 * Sends now to all of the user's devices, rewritten neutrally if Discretion Mode is on. For background
+	 * jobs and the outbox consumer only; request paths use {@link #requestPush}.
+	 *
+	 * @throws IllegalStateException when every device failed, so the outbox retries later
+	 */
+	@Transactional
+	public int deliverNow(String userId, String title, String body, Map<String, String> data) {
 		PushSender sender = push.getIfAvailable();
 		List<Device> targets = devices.findByUserIdOrderByLastSeenAtDesc(userId);
 		if (sender == null || targets.isEmpty()) {
@@ -97,14 +117,22 @@ public class NotificationService {
 		PushMessage message = discreet ? new PushMessage(DISCREET_TITLE, DISCREET_BODY, data)
 				: new PushMessage(title, body, data);
 		int delivered = 0;
+		RuntimeException failure = null;
 		for (Device device : targets) {
 			try {
 				sender.send(device.getPushToken(), message);
 				delivered++;
 			}
+			catch (PushSender.InvalidTokenException gone) {
+				devices.delete(device); // uninstalled app: never retry this token
+			}
 			catch (RuntimeException ex) {
 				log.warn("Push to a device failed", ex);
+				failure = ex;
 			}
+		}
+		if (delivered == 0 && failure != null) {
+			throw new IllegalStateException("Push failed on every device", failure);
 		}
 		return delivered;
 	}
@@ -116,7 +144,7 @@ public class NotificationService {
 			return;
 		}
 		Notice notice = notices.save(new Notice(userId, kind, message, clock.instant()));
-		pushToUser(userId, "A message from OneDay Safety", "Tap to read it in the app",
+		requestPush(userId, "A message from OneDay Safety", "Tap to read it in the app",
 				Map.of("open", "notices", "noticeId", notice.getId()));
 	}
 

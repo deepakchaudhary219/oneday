@@ -33,6 +33,7 @@ import oneday.profile.Profile;
 import oneday.profile.ProfileService;
 import oneday.prompts.PromptCatalog;
 import oneday.safety.BlockChecker;
+import oneday.trust.VouchService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -87,9 +88,13 @@ public class StoryMapService {
 
 	private final Clock clock;
 
+	private final VouchService vouches;
+
 	public StoryMapService(MomentService moments, LocationService locations, ProfileService profiles,
 			ConnectionService connections, BlockChecker blocks, UserGuard guard, PromptCatalog prompts,
-			RateLimiter rateLimiter, StoryMapProperties settings, OneDayProperties properties, Clock clock) {
+			RateLimiter rateLimiter, StoryMapProperties settings, OneDayProperties properties, Clock clock,
+			VouchService vouches) {
+		this.vouches = vouches;
 		this.moments = moments;
 		this.locations = locations;
 		this.profiles = profiles;
@@ -199,6 +204,7 @@ public class StoryMapService {
 		stories.forEach(s -> relayIds.add(s.moment().getRelayRootId() != null ? s.moment().getRelayRootId() : s.moment().getId()));
 		Map<String, Long> relayAnswers = moments.relayCounts(relayIds);
 		List<RelayThread> threads = threads(stories, clusterOf, relayAnswers);
+		Map<String, String> vouched = vouches.countsFor(visible);
 
 		// Most relevant first: shared roots, values and activities, then how many people are there.
 		List<Cluster> placed = clusters.entrySet()
@@ -206,13 +212,14 @@ public class StoryMapService {
 			.sorted(Comparator.comparingInt((Map.Entry<String, List<Story>> e) -> relevance(e.getValue())).reversed())
 			.limit(settings.maxClusters())
 			.map(e -> cluster(e.getKey(), e.getKey().length() > Geohash.AREA_PRECISION ? Level.NEIGHBOURHOOD : Level.AREA,
-					e.getValue(), relayAnswers, now))
+					e.getValue(), relayAnswers, vouched, now))
 			.toList();
-		Cluster cityShelf = shelf.isEmpty() ? null : cluster(CITY_SHELF, Level.CITY, shelf, relayAnswers, now);
+		Cluster cityShelf = shelf.isEmpty() ? null : cluster(CITY_SHELF, Level.CITY, shelf, relayAnswers, vouched, now);
 		return new StoryMap(scope, placed, cityShelf, threads, null);
 	}
 
-	private Cluster cluster(String id, Level level, List<Story> stories, Map<String, Long> relayAnswers, Instant now) {
+	private Cluster cluster(String id, Level level, List<Story> stories, Map<String, Long> relayAnswers,
+			Map<String, String> vouched, Instant now) {
 		List<Story> ordered = stories.stream()
 			.sorted(Comparator.comparingInt((Story s) -> s.affinity().rank())
 				.reversed()
@@ -255,7 +262,7 @@ public class StoryMapService {
 					m.isCapturedLive(), s.affinity().rootsMatch() ? s.owner().getHomeRegion() : null,
 					s.affinity().sharedLanguages(), m.getPromptKey() != null,
 					relayLength > 0 ? relayId : null, relayLength > 0 ? (int) relayLength + 1 : 0,
-					s.affinity().explanation(m.getActivityTag()));
+					s.affinity().explanation(m.getActivityTag()), vouched.get(s.owner().getUserId()));
 		}).toList();
 		return new Cluster(id, level, lat, lon, cap(people), topActivities.isEmpty() ? null : topActivities.get(0),
 				topActivities, (int) Math.min(fromHome, 9), liveNow, season, cards,
@@ -330,7 +337,7 @@ public class StoryMapService {
 	/** A Layer-0 story card. {@code momentId} opens it (Layer 0) or receives a Signal. */
 	public record StoryCard(String momentId, String firstName, MomentKind kind, String activity, String previewUrl,
 			boolean liveCaptured, String sharedHomeRegion, Set<String> sharedLanguages, boolean answersPrompt,
-			String relayId, int relayLength, String whyYouSeeThis) {
+			String relayId, int relayLength, String whyYouSeeThis, String vouchedBy) {
 	}
 
 	/** A Story Relay drawn across the map: the clusters it passes through, in order. */

@@ -1,5 +1,6 @@
 package oneday.prompts;
 
+import oneday.platform.ReplicaReads;
 import java.time.LocalDate;
 import java.util.List;
 
@@ -36,7 +37,7 @@ public class PromptController {
 	/** Today's Prompt. Answer it by posting a moment with {@code promptKey}. */
 	@GetMapping("/prompts/today")
 	TodayView today(@AuthenticationPrincipal Jwt jwt) {
-		return prompts.today(jwt.getSubject());
+		return ReplicaReads.run(() -> prompts.today(jwt.getSubject()));
 	}
 
 	@PostMapping("/staff/prompts")

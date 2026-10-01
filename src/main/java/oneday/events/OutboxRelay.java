@@ -20,7 +20,7 @@ import org.springframework.transaction.support.TransactionTemplate;
  * Moves committed events from the outbox to their consumers. Every replica runs a relay; a short lease per
  * event keeps two relays off the same event, and a relay that dies mid-delivery only delays its events until
  * the lease runs out. Delivery is at least once and not ordered across aggregates; consumers are idempotent
- * (see {@link InProcessEventTransport}).
+ * (see {@link EventDispatcher}).
  */
 @Component
 public class OutboxRelay {

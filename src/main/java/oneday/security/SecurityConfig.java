@@ -78,7 +78,9 @@ public class SecurityConfig {
 				.requestMatchers(HttpMethod.POST, "/moments", "/media/uploads", "/signals", "/signals/*/reveal",
 						"/conversations/*/messages", "/connections/*/spark",
 						"/connections/*/couple", "/dates", "/dates/*/accept",
-						"/right-now", "/right-now/*/join", "/right-now/requests/*/accept")
+						"/right-now", "/right-now/*/join", "/right-now/requests/*/accept",
+						"/plans", "/plans/*/join", "/plans/*/room", "/plans/*/requests/*/approve",
+						"/connections/*/vouch")
 				.hasAuthority(VERIFIED)
 				.requestMatchers("/staff/members/**", "/staff/audit", "/staff/accounts/**", "/staff/events/**",
 						"/staff/metrics/**")
@@ -101,7 +103,8 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	JwtDecoder jwtDecoder(SecretKey jwtSigningKey, Clock clock, SessionRepository sessions) {
+	JwtDecoder jwtDecoder(SecretKey jwtSigningKey, Clock clock, SessionRepository sessions,
+			SessionLivenessCache sessionCache) {
 		NimbusJwtDecoder decoder = NimbusJwtDecoder.withSecretKey(jwtSigningKey)
 			.macAlgorithm(MacAlgorithm.HS256)
 			.build();
@@ -109,7 +112,7 @@ public class SecurityConfig {
 		timestamps.setClock(clock);
 		// Cheap checks first: the session lookup only runs for a well-formed, unexpired token of ours.
 		decoder.setJwtValidator(new DelegatingOAuth2TokenValidator<>(timestamps, new JwtIssuerValidator(ISSUER),
-				new SessionValidator(sessions, clock)));
+				new SessionValidator(sessions, clock, sessionCache)));
 		return decoder;
 	}
 

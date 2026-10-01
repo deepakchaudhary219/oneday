@@ -150,6 +150,11 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `GET/POST/DELETE /staff/festivals` | *moderator* | Festival Seasons: dated windows (1–31 days) for one home region or everyone; they drive Today's Prompt and label Story Map clusters |
 | `GET /ledger/week` | | Weekly Recap: last week (local Monday–Sunday) as one highlight, a few facts and a kind ending |
 | `GET /wellbeing/check` · `POST /wellbeing/answer` | | The rare "was your time well spent?" guardrail question (about 1 in 50 person-days, at most once per 14 days) |
+| `POST /plans` (**V**) · `GET /plans` · `GET /plans/mine` · `GET /plans/{id}` · `POST /plans/{id}/join` (**V**) · `/leave` | | Plans & Rooms at Safety-Verified Meeting Points; joining needs the host's approval |
+| `GET /plans/{id}/requests` · `POST /plans/{id}/requests/{handle}/approve` (**V**) · `/decline` · `GET/POST /plans/{id}/room` | | Opaque request handles (no user ids); a silent decline; the members-only Room |
+| `POST /connections/{id}/vouch` (**V**) · `DELETE` · `GET /vouches/mine` | | Trusted Vouch; strangers see a capped count only |
+| `POST/DELETE /moments/{id}/keep` · `GET /moments/trail` | | Private Memory Trail (area-level location only) |
+| any authenticated `POST` with `Idempotency-Key` | | The original response is replayed for a retry (`Idempotent-Replayed: true`); a reused key with a different body gets 422 |
 | `GET /staff/metrics/engagement?weeks=` | *admin* | Weekly Meaningful Actives and the well-spent share, per ISO week |
 | `POST /right-now` (**V**) · `GET /right-now` · `GET /right-now/mine` · `DELETE /right-now` | | Right Now (behind `oneday.right-now.enabled`, Gate 2): an activity for 30–120 min, shown at band precision |
 | `POST /right-now/{id}/join` (**V**) · `GET /right-now/requests` · `POST /right-now/requests/{id}/accept` (**V**) · `/decline` | | "I'm up for it too" (5/day, no free text); accepting creates the Connection, declining is silent |
@@ -225,7 +230,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V18`)
+## 6. Data model (Flyway `V1`–`V22`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -255,6 +260,10 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `weekly_actives` · `wellbeing_answers` (V16) | PK(`user_id`, `week_start`) · `well_spent` | North-star projection from events (two-way conversations are counted from `messages`) and the guardrail answers |
 | `festival_seasons` (V17) | `name`, `home_region`, `starts_on`, `ends_on`, `prompt_text` | Entered per year (lunar dates move); prompt keys `f:<id>:<yyyymmdd>` |
 | `right_now_sessions` · `right_now_joins` (V18) | activity + time box · UQ(`session_id`, `joiner_id`), status | Feature-flagged until Gate 2 |
+| `idempotency_keys` (V19), `profiles(time_zone, pulse_hour)` index | PK(`user_id`, `idem_key`), request hash, stored response | Kept 24 h; erased with the account |
+| `plans` · `plan_members` · `plan_messages` (V20) | venue position, capacity, Roots region, `row_version` · member status · Room messages | Plans and Rooms are deleted a day after the plan ends |
+| `vouches` (V21) | PK(`voucher_id`, `vouchee_id`) | Removed on block or erasure |
+| `moments.kept`, `moments.trail_media_ref` (V22) | Memory Trail | Kept stories survive retention with their area only |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 
 ---

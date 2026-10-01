@@ -1,5 +1,6 @@
 package oneday.discovery;
 
+import oneday.platform.ReplicaReads;
 import oneday.discovery.StoryMapService.StoryMap;
 
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -24,6 +25,6 @@ public class StoryMapController {
 	@GetMapping("/map/stories")
 	StoryMap stories(@AuthenticationPrincipal Jwt jwt, @RequestParam(defaultValue = "RADIUS") DiscoveryScope scope,
 			@RequestParam(required = false) String activity, @RequestParam(defaultValue = "false") boolean todaysPrompt) {
-		return map.map(jwt.getSubject(), scope, activity, todaysPrompt);
+		return ReplicaReads.run(() -> map.map(jwt.getSubject(), scope, activity, todaysPrompt));
 	}
 }
