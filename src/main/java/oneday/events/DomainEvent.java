@@ -92,6 +92,30 @@ public sealed interface DomainEvent {
 		}
 	}
 
+	/** A Time Capsule was sealed with media that must outlive the story bucket's expiry. */
+	record CapsuleSealed(String capsuleId, String senderId) implements DomainEvent {
+
+		public String aggregateId() {
+			return capsuleId;
+		}
+
+		public List<String> userIds() {
+			return List.of(senderId);
+		}
+	}
+
+	/** A post with media was added to a Collaborative Thread. */
+	record ThreadPostAdded(String postId, String threadId, String authorId) implements DomainEvent {
+
+		public String aggregateId() {
+			return threadId;
+		}
+
+		public List<String> userIds() {
+			return List.of(authorId);
+		}
+	}
+
 	/** A Signal was sent (Layer 1). */
 	record SignalSent(String signalId, String senderId, String recipientId) implements DomainEvent {
 

@@ -26,7 +26,9 @@ public class Notice {
 		/** A grievance you filed was received or answered. */
 		GRIEVANCE_UPDATE,
 		/** Something about your own account, e.g. the periodic re-verification is due. */
-		ACCOUNT
+		ACCOUNT,
+		/** Something a person did for or with you: a Time Capsule opened, a spotlight, a thread invite. */
+		SOCIAL
 	}
 
 	@Id

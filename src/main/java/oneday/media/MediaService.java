@@ -172,11 +172,20 @@ public class MediaService {
 	 * {@code moments/}) and returns the new key. Runs in a background consumer; I/O never blocks a request.
 	 */
 	public String copyToTrail(String key, boolean video) {
+		return copyToDurable("trail", key, video);
+	}
+
+	/**
+	 * Copies a served object under {@code prefix/} (no expiry rule) and returns the new key: for media that
+	 * must outlive the ~3-day {@code moments/} rule (Memory Trail, Time Capsules, Collaborative Threads).
+	 * Background consumers only.
+	 */
+	public String copyToDurable(String prefix, String key, boolean video) {
 		MediaStorage store = storage.getIfAvailable();
 		if (store == null) {
 			throw new IllegalStateException("No media storage configured");
 		}
-		String target = "trail/" + Ids.newId();
+		String target = prefix + "/" + Ids.newId();
 		try {
 			Path temp = Files.createTempFile("oneday-trail-", video ? ".mp4" : ".jpg");
 			Files.delete(temp);

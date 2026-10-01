@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 
 import oneday.calls.CallService;
+import oneday.capsules.TimeCapsuleService;
 import oneday.chat.ChatService;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionService;
@@ -112,6 +113,8 @@ public class PrivacyService {
 
 	private final CallService calls;
 
+	private final TimeCapsuleService capsules;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
@@ -120,7 +123,7 @@ public class PrivacyService {
 			WellbeingService wellbeing, RightNowService rightNow, IdempotencyStore idempotency, PlanService plans,
 			VouchService vouches, PlusService plus, ConsentService consents,
 			PulseStatusService pulseStatuses, E2eeService e2ee,
-			CallService calls, Clock clock,
+			CallService calls, TimeCapsuleService capsules, Clock clock,
 			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
 		this.rightNow = rightNow;
 		this.idempotency = idempotency;
@@ -131,6 +134,7 @@ public class PrivacyService {
 		this.pulseStatuses = pulseStatuses;
 		this.e2ee = e2ee;
 		this.calls = calls;
+		this.capsules = capsules;
 		this.clock = clock;
 		this.momentRetention = momentRetention;
 		this.wellbeing = wellbeing;
@@ -227,6 +231,7 @@ public class PrivacyService {
 		// Encrypted message text is on the person's devices only; the server holds public keys and metadata.
 		data.put("secureChatDevices", e2ee.export(userId));
 		data.put("calls", calls.export(userId)); // call metadata only: media is never recorded
+		data.put("timeCapsules", capsules.export(userId));
 		return data;
 	}
 
@@ -301,6 +306,7 @@ public class PrivacyService {
 		pulseStatuses.forget(userId);
 		e2ee.forget(userId);
 		calls.forget(userId);
+		capsules.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
