@@ -63,6 +63,10 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
   - The socket is receive-only; every write stays on the HTTP API.
   - Events fan out across replicas through Redis.
 - **Pacing Guardian:** a private nudge after 3 unanswered messages, a pause at 5 until the other person replies (or a day passes), and slowing of message bursts.
+- **Empathy Mirror:** before a chat or Room message that reads as unkind (English, Hinglish or Devanagari), the sender sees a short reflection (422 `EMPATHY_CHECK`).
+  - `"sendAnyway": true` still sends it.
+  - The recipient is then asked "Does this bother you?", with the matching report one tap away.
+  - The lexicon can be replaced without a release (`oneday.empathy.lexicon`).
 - **OneDay Plus** (`GET /plus`, `POST /plus/subscribe`, `POST /plus/cancel`, webhook `POST /webhooks/razorpay`):
   - billed through Razorpay with UPI Autopay;
   - adds only a wider radius and more hosted plans;

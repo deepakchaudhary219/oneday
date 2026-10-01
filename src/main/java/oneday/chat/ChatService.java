@@ -16,6 +16,8 @@ import java.util.Set;
 import oneday.common.ApiException;
 import oneday.connections.Connection;
 import oneday.connections.ConnectionService;
+import oneday.empathy.EmpathyMirror;
+import oneday.empathy.EmpathyMirror.Concern;
 import oneday.identity.UserGuard;
 import oneday.realtime.RealtimeService;
 import oneday.safety.BlockChecker;
@@ -46,9 +48,12 @@ public class ChatService {
 
 	private final PacingGuardian pacing;
 
+	private final EmpathyMirror empathy;
+
 	public ChatService(ConversationRepository conversations, MessageRepository messages,
 			ConnectionService connections, UserGuard guard, BlockChecker blocks, Clock clock, RealtimeService realtime,
-			PacingGuardian pacing) {
+			PacingGuardian pacing, EmpathyMirror empathy) {
+		this.empathy = empathy;
 		this.realtime = realtime;
 		this.pacing = pacing;
 		this.conversations = conversations;
@@ -71,7 +76,7 @@ public class ChatService {
 	}
 
 	@Transactional
-	public MessageView send(String userId, String conversationId, String body) {
+	public MessageView send(String userId, String conversationId, String body, boolean sendAnyway) {
 		guard.requireContactAllowed(userId);
 		Conversation conversation = requireConversation(conversationId);
 		Connection connection = connections.requireMember(conversation.getConnectionId(), userId);
@@ -79,7 +84,10 @@ public class ChatService {
 			throw ApiException.conflict("CONVERSATION_INACTIVE", "This conversation is no longer active");
 		}
 		int streak = pacing.beforeSend(conversationId, userId);
-		Message message = messages.save(new Message(conversationId, userId, body.strip(), clock.instant()));
+		var tone = empathy.reflect("chat", body, sendAnyway);
+		Message message = new Message(conversationId, userId, body.strip(), clock.instant());
+		tone.ifPresent(t -> message.flagTone(t.name()));
+		messages.save(message);
 		// Each side gets its own view (mine true/false), the sender's other devices included.
 		realtime.toUser(connection.otherThan(userId), "message",
 				new RealtimeMessage(conversationId, MessageView.of(message, connection.otherThan(userId))));
@@ -196,16 +204,21 @@ public class ChatService {
 	public record RealtimeMessage(String conversationId, MessageView message) {
 	}
 
-	/** {@code pacingHint} is a private note for the sender only (Pacing Guardian), never part of history. */
-	public record MessageView(String id, boolean mine, String body, Instant sentAt, String pacingHint) {
+	/**
+	 * {@code pacingHint} is a private note for the sender only (Pacing Guardian), never part of history.
+	 * {@code concern} is shown to the recipient only, on a message sent past the Empathy Mirror.
+	 */
+	public record MessageView(String id, boolean mine, String body, Instant sentAt, String pacingHint,
+			Concern concern) {
 
 		static MessageView of(Message message, String viewerId) {
-			return new MessageView(message.getId(), message.getSenderId().equals(viewerId), message.getBody(),
-					message.getCreatedAt(), null);
+			boolean mine = message.getSenderId().equals(viewerId);
+			return new MessageView(message.getId(), mine, message.getBody(), message.getCreatedAt(), null,
+					EmpathyMirror.concernFor(message.getToneFlag(), mine));
 		}
 
 		MessageView withHint(String hint) {
-			return new MessageView(id, mine, body, sentAt, hint);
+			return new MessageView(id, mine, body, sentAt, hint, concern);
 		}
 	}
 

@@ -21,6 +21,8 @@ import oneday.common.RateLimiter;
 import oneday.connections.ConnectionService;
 import oneday.dates.MeetingPoint;
 import oneday.dates.MeetingPointService;
+import oneday.empathy.EmpathyMirror;
+import oneday.empathy.EmpathyMirror.Concern;
 import oneday.events.DomainEvent;
 import oneday.events.EventPublisher;
 import oneday.geo.GeoCell;
@@ -30,10 +32,10 @@ import oneday.identity.UserGuard;
 import oneday.notify.NotificationService;
 import oneday.plus.Entitlements;
 import oneday.profile.ActivityTags;
-import oneday.realtime.RealtimeService;
 import oneday.profile.Affinity;
 import oneday.profile.Profile;
 import oneday.profile.ProfileService;
+import oneday.realtime.RealtimeService;
 import oneday.safety.BlockChecker;
 
 import org.springframework.data.domain.PageRequest;
@@ -102,12 +104,15 @@ public class PlanService {
 
 	private final Entitlements entitlements;
 
+	private final EmpathyMirror empathy;
+
 	public PlanService(PlanRepository plans, PlanMemberRepository members, PlanMessageRepository messages,
 			MeetingPointService meetingPoints, LocationService locations, ProfileService profiles,
 			ConnectionService connections, BlockChecker blocks, UserGuard guard, NotificationService notifications,
 			EventPublisher events, Clock clock, RealtimeService realtime, RateLimiter rateLimiter,
-			Entitlements entitlements) {
+			Entitlements entitlements, EmpathyMirror empathy) {
 		this.entitlements = entitlements;
+		this.empathy = empathy;
 		this.realtime = realtime;
 		this.rateLimiter = rateLimiter;
 		this.plans = plans;
@@ -295,7 +300,7 @@ public class PlanService {
 	// ---- the Room -----------------------------------------------------------------------------------
 
 	@Transactional
-	public RoomMessage say(String userId, String planId, String body) {
+	public RoomMessage say(String userId, String planId, String body, boolean sendAnyway) {
 		guard.requireContactAllowed(userId);
 		Plan plan = requireRoom(userId, planId);
 		if (!plan.isOpen(clock.instant())) {
@@ -304,7 +309,10 @@ public class PlanService {
 		if (!rateLimiter.tryAcquire("room:" + planId + ":" + userId, 10, Duration.ofMinutes(1))) {
 			throw ApiException.tooManyRequests("PACING_SLOW_DOWN", "Slow down a little. Messages land better one at a time.");
 		}
-		PlanMessage message = messages.save(new PlanMessage(planId, userId, body.strip(), clock.instant()));
+		var tone = empathy.reflect("room", body, sendAnyway);
+		PlanMessage message = new PlanMessage(planId, userId, body.strip(), clock.instant());
+		tone.ifPresent(t -> message.flagTone(t.name()));
+		messages.save(message);
 		String name = profiles.require(userId).firstName();
 		// Every member who hasn't blocked (or been blocked by) the sender gets it live.
 		Set<String> blocked = blocks.blockedEitherWay(userId);
@@ -495,10 +503,14 @@ public class PlanService {
 	public record RealtimeRoomMessage(String planId, RoomMessage message) {
 	}
 
-	public record RoomMessage(String id, String firstName, boolean mine, String body, Instant sentAt) {
+	/** {@code concern}: the Empathy Mirror's "does this bother you?" for other members, or null. */
+	public record RoomMessage(String id, String firstName, boolean mine, String body, Instant sentAt,
+			Concern concern) {
 
 		static RoomMessage of(PlanMessage m, String viewerId, String firstName) {
-			return new RoomMessage(m.getId(), firstName, m.getSenderId().equals(viewerId), m.getBody(), m.getCreatedAt());
+			boolean mine = m.getSenderId().equals(viewerId);
+			return new RoomMessage(m.getId(), firstName, mine, m.getBody(), m.getCreatedAt(),
+					EmpathyMirror.concernFor(m.getToneFlag(), mine));
 		}
 	}
 }

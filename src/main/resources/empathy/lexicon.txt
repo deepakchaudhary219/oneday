@@ -1,0 +1,147 @@
+# Empathy Mirror lexicon (oneday.empathy.lexicon). Trust & Safety owns this list; replace it with
+# oneday.empathy.lexicon=file:/path/to/lexicon.txt without a release.
+#
+#   TONE|term     counts anywhere in the message (a word or a phrase)
+#   TONE~|term    a mild word that counts only when the message addresses the reader
+#   YOU|term      a second-person marker for the rule above
+#
+# Matching is on normalised text (lower case, look-alike digits undone, stretched letters collapsed), and
+# false positives are cheap: the sender sees a reflection and can still send. Tones, least to most severe:
+# INSULT, BODY_SHAMING, SEXUAL_PRESSURE, THREAT, HATE.
+
+YOU|you
+YOU|u
+YOU|ur
+YOU|your
+YOU|youre
+YOU|yourself
+YOU|tu
+YOU|tum
+YOU|tumhe
+YOU|tumko
+YOU|tujhe
+YOU|tera
+YOU|teri
+YOU|tere
+YOU|aap
+YOU|aapko
+YOU|तू
+YOU|तुम
+YOU|तुझे
+YOU|तेरा
+YOU|तेरी
+YOU|आप
+
+INSULT~|idiot
+INSULT~|stupid
+INSULT~|dumb
+INSULT~|moron
+INSULT~|loser
+INSULT~|pathetic
+INSULT~|worthless
+INSULT~|useless
+INSULT~|bewakoof
+INSULT~|gadha
+INSULT|retard
+INSULT|bitch
+INSULT|whore
+INSULT|slut
+INSULT|bastard
+INSULT|asshole
+INSULT|dickhead
+INSULT|fuck you
+INSULT|fck you
+INSULT|fuck off
+INSULT|fck off
+INSULT|screw you
+INSULT|nobody likes you
+INSULT|chutiya
+INSULT|chutiye
+INSULT|gandu
+INSULT|harami
+INSULT|haramzada
+INSULT|haramzade
+INSULT|kamina
+INSULT|kamine
+INSULT|kameena
+INSULT|kameeni
+INSULT|kutta
+INSULT|kutte
+INSULT|kutti
+INSULT|kutiya
+INSULT|madarchod
+INSULT|behenchod
+INSULT|bhenchod
+INSULT|bhosdike
+INSULT|bhosdiwale
+INSULT|tharki
+INSULT|ullu ka pattha
+INSULT|saali randi
+INSULT|कमीना
+INSULT|कमीनी
+INSULT|हरामी
+INSULT|कुत्ता
+INSULT|कुत्ती
+INSULT|चूतिया
+INSULT|गांडू
+INSULT|मादरचोद
+INSULT|बहनचोद
+INSULT|भोसड़ीके
+
+BODY_SHAMING~|ugly
+BODY_SHAMING~|fatty
+BODY_SHAMING~|hideous
+BODY_SHAMING|so fat
+BODY_SHAMING|too fat
+BODY_SHAMING|fat pig
+BODY_SHAMING|too dark
+BODY_SHAMING|kali kaluti
+BODY_SHAMING|moti bhains
+
+SEXUAL_PRESSURE|nudes
+SEXUAL_PRESSURE|send nude
+SEXUAL_PRESSURE|nude pic
+SEXUAL_PRESSURE|nude pics
+SEXUAL_PRESSURE|dick pic
+SEXUAL_PRESSURE|boobs
+SEXUAL_PRESSURE|sexting
+SEXUAL_PRESSURE|sex chat
+SEXUAL_PRESSURE|horny
+SEXUAL_PRESSURE|show me your body
+SEXUAL_PRESSURE|nangi
+SEXUAL_PRESSURE|नंगी
+
+THREAT|kill you
+THREAT|i will kill
+THREAT|hurt you
+THREAT|know where you live
+THREAT|find where you live
+THREAT|watch your back
+THREAT|you will regret
+THREAT|throw acid
+THREAT|acid attack
+THREAT|rape
+THREAT|kill yourself
+THREAT|kys
+THREAT|go die
+THREAT|jaan se maar
+THREAT|maar dunga
+THREAT|maar dalunga
+THREAT|dekh lunga
+THREAT|utha lunga
+THREAT|uthwa lunga
+THREAT|tezaab
+THREAT|जान से मार
+THREAT|मार डालूंगा
+THREAT|देख लूंगा
+
+HATE|chamar
+HATE|bhangi
+HATE|katua
+HATE|chinki
+HATE|paki
+HATE|nigger
+HATE|faggot
+HATE|go back to pakistan
+HATE|चमार
+HATE|भंगी

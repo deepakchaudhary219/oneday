@@ -28,6 +28,9 @@ public class Message {
 	@Column(nullable = false)
 	private Instant createdAt;
 
+	/** The Empathy Mirror tone of a message sent anyway after the reflection, or null. */
+	private String toneFlag;
+
 	protected Message() {
 	}
 
@@ -57,5 +60,13 @@ public class Message {
 
 	public Instant getCreatedAt() {
 		return createdAt;
+	}
+
+	public String getToneFlag() {
+		return toneFlag;
+	}
+
+	void flagTone(String tone) {
+		this.toneFlag = tone;
 	}
 }

@@ -42,7 +42,7 @@ public class ChatController {
 	@ResponseStatus(HttpStatus.CREATED)
 	MessageView send(@AuthenticationPrincipal Jwt jwt, @PathVariable String conversationId,
 			@Valid @RequestBody SendMessage request) {
-		return chat.send(jwt.getSubject(), conversationId, request.body());
+		return chat.send(jwt.getSubject(), conversationId, request.body(), Boolean.TRUE.equals(request.sendAnyway()));
 	}
 
 	@GetMapping("/balance")
@@ -50,6 +50,7 @@ public class ChatController {
 		return chat.balance(jwt.getSubject(), conversationId);
 	}
 
-	record SendMessage(@NotBlank @Size(max = 2000) String body) {
+	/** {@code sendAnyway}: the sender saw the Empathy Mirror's reflection and still wants to send. */
+	record SendMessage(@NotBlank @Size(max = 2000) String body, Boolean sendAnyway) {
 	}
 }

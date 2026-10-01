@@ -96,7 +96,7 @@ public class PlanController {
 	@ResponseStatus(HttpStatus.CREATED)
 	RoomMessage say(@AuthenticationPrincipal Jwt jwt, @PathVariable String planId,
 			@Valid @RequestBody SayRequest request) {
-		return plans.say(jwt.getSubject(), planId, request.body());
+		return plans.say(jwt.getSubject(), planId, request.body(), Boolean.TRUE.equals(request.sendAnyway()));
 	}
 
 	public record HostRequest(@NotBlank String meetingPointId, @NotBlank @Size(max = 30) String activity,
@@ -104,6 +104,6 @@ public class PlanController {
 			@NotNull Instant endsAt) {
 	}
 
-	public record SayRequest(@NotBlank @Size(max = 1000) String body) {
+	public record SayRequest(@NotBlank @Size(max = 1000) String body, Boolean sendAnyway) {
 	}
 }

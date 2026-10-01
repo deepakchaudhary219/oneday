@@ -1,5 +1,8 @@
 package oneday.common;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.springframework.http.HttpStatus;
 
 /** A domain error with a stable machine-readable {@code code}, rendered as RFC 9457 problem detail. */
@@ -9,10 +12,22 @@ public class ApiException extends RuntimeException {
 
 	private final String code;
 
+	private final Map<String, Object> properties = new LinkedHashMap<>();
+
 	public ApiException(HttpStatus status, String code, String message) {
 		super(message);
 		this.status = status;
 		this.code = code;
+	}
+
+	/** Adds a machine-readable field to the problem detail, next to {@code code}. */
+	public ApiException with(String name, Object value) {
+		properties.put(name, value);
+		return this;
+	}
+
+	public Map<String, Object> properties() {
+		return Map.copyOf(properties);
 	}
 
 	public HttpStatus status() {

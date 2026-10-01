@@ -127,7 +127,7 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `GET /connections` | | Own connections. `mutualSpark` is shown only if both sparked. |
 | `POST /connections/{id}/spark` / `DELETE` | **V** | Mutual Spark (requires your own Dating Lens) |
 | `POST /connections/{id}/exit` | | Soft exit (no notification) |
-| `GET /conversations/{id}/messages` · `POST` (**V**) | | Friend-Mode chat |
+| `GET /conversations/{id}/messages` · `POST` (**V**) | | Friend-Mode chat. Empathy Mirror: a message that may land badly gets 422 `EMPATHY_CHECK` (with `tone` and a reflection in `detail`). Resending with `"sendAnyway":true` (and a new `Idempotency-Key`) delivers it, and the recipient's view carries `concern` ("Does this bother you?" plus the matching report category). The same applies to Room messages. |
 | `GET /conversations/{id}/balance` | | Qualitative Investment Balance for the viewer |
 | `POST /safety/blocks` · `POST /safety/reports` | | Target by exactly one of `momentId`, `signalId`, `connectionId`, `planId`, `roomMessageId`, `rightNowId`, `dateId` or `pulseStatusId` (modules contribute `SafetyTargetResolver` beans). A target the caller can't see is 404. Internal user IDs are never exposed. |
 | `GET /pulse` | | Local Pulse digest (counts capped at "9+") |
@@ -234,7 +234,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V25`)
+## 6. Data model (Flyway `V1`–`V26`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -270,6 +270,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `moments.kept`, `moments.trail_media_ref` (V22) | Memory Trail | Kept stories survive retention with their area only |
 | `subscriptions` · `payment_webhook_events` (V23) | provider subscription id UQ, status, `current_end`, `cancel_at_cycle_end` · applied webhook ids | Kept on erasure with `user_id` replaced (tax law) |
 | `consent_records` (V24) | `user_id`, `purpose`, `action` (`GRANTED`/`WITHDRAWN`), `notice_version`, `source` (`APP_ACTION`/`SETTINGS`); index (`user_id`, `purpose`, `created_at`) | Append-only; the latest row is the current state. Pseudonymised on erasure: proof of consent stays with the fiduciary (DPDP s.6(10)). |
+| `messages.tone_flag` · `plan_messages.tone_flag` (V26) | Empathy Mirror tone of a message sent anyway, or NULL | Drives the recipient's "does this bother you?" |
 | `pulse_statuses` (V25) | PK `user_id`, `id` UQ (new on every update), `mood`, `emoji`, `note`, `spotify_track_id`, `expires_at` (indexed) | One per person; reads filter on expiry and a sweeper deletes expired rows |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 
@@ -317,7 +318,8 @@ PENDING ──reveal──► REVEALED  (Connection + Conversation created atomi
 - **Metrics:** Prometheus at `/actuator/prometheus`, token-free only on the internal management port. Besides JVM, HTTP and pool metrics:
   - core-loop counters: `oneday_moments_published`, `oneday_signals_sent`, `oneday_reveals`;
   - safety counters: `oneday_reports_filed{priority}`, `oneday_auth_logins{outcome}`, `oneday_sessions_reuse_detected`, `oneday_media_processed{outcome}`, `oneday_grievances_filed{category}`;
-  - gauges to alert on: `oneday_reports_overdue{priority}` and `oneday_grievances_overdue`.
+  - gauges to alert on: `oneday_reports_overdue{priority}` and `oneday_grievances_overdue`;
+  - behavioural safety: `oneday_pacing{action}`, and `oneday_empathy_mirror{surface,outcome}` (the share of prompted messages that are reconsidered is `1 − sent_anyway / prompted`).
 
   Tags are fixed vocabularies, never user ids or places.
 - **Audit:** staff decisions go to the append-only `staff_actions` log.
