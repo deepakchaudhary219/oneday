@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -66,9 +67,13 @@ public class MomentService {
 
 	private final PromptCatalog prompts;
 
+	private final SpotlightRepository spotlights;
+
 	public MomentService(MomentRepository moments, LocationService locations, ProfileService profiles,
 			ConnectionService connections, UserGuard guard, BlockChecker blocks, MediaService media, Clock clock,
-			OneDayProperties properties, ProductMetrics metrics, EventPublisher events, PromptCatalog prompts) {
+			OneDayProperties properties, ProductMetrics metrics, EventPublisher events, PromptCatalog prompts,
+			SpotlightRepository spotlights) {
+		this.spotlights = spotlights;
 		this.prompts = prompts;
 		this.metrics = metrics;
 		this.events = events;
@@ -192,13 +197,19 @@ public class MomentService {
 		Set<String> reachable = guard.reachableAmong(owners);
 		Set<String> sharing = locations.currentCells(owners).keySet();
 		Set<String> connected = connections.connectedUserIds(viewerId);
+		Set<String> spotlit = spotlights.findByRootMomentIdAndStatus(rootId, Spotlight.Status.ACCEPTED)
+			.stream()
+			.map(Spotlight::getReplyMomentId)
+			.collect(Collectors.toSet());
 		List<RelayLink> links = chain.stream().filter(m -> {
 			String owner = m.getOwnerId();
 			return owner.equals(viewerId) || connected.contains(owner)
 					|| (!blocked.contains(owner) && reachable.contains(owner) && sharing.contains(owner));
 		}).map(m -> new RelayLink(m.getId(), profiles.require(m.getOwnerId()).firstName(), m.getKind(),
 				m.getActivityTag(), previewUrl(m), m.isCapturedLive(), m.getRelayDepth(),
-				m.getOwnerId().equals(viewerId))).toList();
+				m.getOwnerId().equals(viewerId), spotlit.contains(m.getId())))
+			.sorted(Comparator.comparing((RelayLink l) -> !l.spotlit()))
+			.toList();
 		String activity = chain.isEmpty() ? null : chain.get(0).getActivityTag();
 		boolean open = chain.size() < MAX_RELAY_LENGTH;
 		return new RelayView(rootId, activity, links.size(), open, links);
@@ -404,8 +415,9 @@ public class MomentService {
 	}
 
 	/** A link in a relay, Layer 0 only. {@code position} 0 is the moment that started it. */
+	/** {@code spotlit}: the story's owner highlighted it and its author agreed; spotlit links come first. */
 	public record RelayLink(String momentId, String firstName, MomentKind kind, String activity, String previewUrl,
-			boolean liveCaptured, int position, boolean mine) {
+			boolean liveCaptured, int position, boolean mine, boolean spotlit) {
 	}
 
 	public record RelayView(String relayId, String activity, int length, boolean open, List<RelayLink> links) {
