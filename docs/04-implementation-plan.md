@@ -274,4 +274,17 @@ Specified in `05-engagement-psychology.md`. All of it is subject to that documen
 
 | **Layered Video calls** (our reading of the v2 "Layered Video": Layered Reveal applied to calls): chat first; voice first; blurred and then clear video only as far as both people choose; instant step-down; WebRTC signalling relay; ephemeral TURN credentials; missed/timeout sweeps; block ends calls; reportable by `callId`; metadata purged after 30 days | `calls`, `chat`, `realtime`, `safety`, `privacy` | ✅ |
 
-**Verification:** 157 automated tests pass on H2 and MySQL 8.0, including a real WebSocket round trip and the Razorpay adapter against a local fake. `scripts/smoke-test.sh` also passes against the packaged jar on MySQL. It now covers consent, Pulse Status, the Empathy Mirror, a layered call, an encrypted message through a device inbox and an attestation challenge. That run caught a production-only bug: the microsecond tick clock threw on every `millis()` call. It was fixed with `TimeConfig.MicrosecondClock`, and the production clock now has its own test.
+### v3 (Scale) features, interpreted in `07-v3-features.md`
+
+| Capability | Where | Status |
+|---|---|---|
+| **Time Capsules** (sealed until the day; durable media; block cancels) | `capsules`, `media` | ✅ |
+| **Collaborative Threads** (friends' shared thread, handles not ids, purge after end) | `threads` | ✅ |
+| **Spotlight Replies** (owner asks, answerer consents) | `moments` | ✅ |
+| **Public Figure accounts** (staff-verified, one-way follow, private counts, feed) | `figures`, `moments` | ✅ |
+| **AMA Corridors** (Roots-region Q&A, private vote counts, moderation) | `ama` | ✅ |
+| **Circle Live** (LiveKit-compatible tokens, subscribe-only viewers, 10-minute renewal) | `live` | ✅ |
+| **Multi-city launch gates** (city registry, per-city Right Now, density view) | `cities`, `rightnow`, `geo` | ✅ |
+| **Flutter handoff:** contract-tested `docs/api/openapi.json` (211 stable operation ids) and `08-flutter-integration.md` | `config`, docs | ✅ |
+
+**Verification:** 168 automated tests pass on H2 and MySQL 8.0, including a real WebSocket round trip and the Razorpay adapter against a local fake. `scripts/smoke-test.sh` also passes against the packaged jar on MySQL. It now covers consent, Pulse Status, the Empathy Mirror, a layered call, an encrypted message through a device inbox and an attestation challenge. That run caught a production-only bug: the microsecond tick clock threw on every `millis()` call. It was fixed with `TimeConfig.MicrosecondClock`, and the production clock now has its own test.

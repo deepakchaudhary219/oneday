@@ -14,6 +14,9 @@ A story-first, hyperlocal social network where friendship **and dating** can hap
 | [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) | Milestones M0–M6, team, density gates, what each milestone delivered |
 | [`docs/06-system-design.md`](docs/06-system-design.md) | System design for scale: request path, outbox and Kafka, consistency choices, hot spots, extraction order |
 | [`docs/05-engagement-psychology.md`](docs/05-engagement-psychology.md) | Why people come back: the psychology behind every engagement feature, the dark patterns we refuse, and how we measure it |
+| [`docs/07-v3-features.md`](docs/07-v3-features.md) | How the v3 features (Time Capsules, Threads, Spotlights, Public Figures, AMA Corridors, Circle Live, multi-city) were interpreted, and open product questions |
+| [`docs/08-flutter-integration.md`](docs/08-flutter-integration.md) | For the app team: generating the Dart client, auth and refresh, errors, sockets, attestation, encrypted chat, calls, live |
+| [`docs/api/openapi.json`](docs/api/openapi.json) | The API contract (OpenAPI 3.1), generated from the code and checked by a test |
 
 These docs extend the original *Product & Psychology Blueprint* and *Technical Architecture & System Design Specification*.
 
@@ -91,6 +94,19 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
   - WebRTC media is peer-to-peer and never recorded; the server only relays signalling and issues 1-hour TURN credentials.
 - **Safety from every surface:** block or report by `momentId`, `signalId`, `connectionId`, `planId`, `roomMessageId`, `rightNowId`, `dateId`, `pulseStatusId` or `callId`.
 
+**v3 features** (see [`docs/07-v3-features.md`](docs/07-v3-features.md) for how each was interpreted):
+- Time Capsules
+- Collaborative Threads
+- Spotlight Replies
+- Public Figure accounts
+- AMA Corridors
+- Circle Live
+- multi-city launch gates
+
+**For the app team:**
+- [`docs/api/openapi.json`](docs/api/openapi.json) is the contract-tested OpenAPI spec. Generate the Dart client from it.
+- [`docs/08-flutter-integration.md`](docs/08-flutter-integration.md) covers auth, errors, sockets, attestation, encrypted chat, calls and live.
+
 **Scale and platform** (see [`docs/06-system-design.md`](docs/06-system-design.md)):
 - Pushes and texts are sent after commit through the outbox, never inside a request.
 - `Idempotency-Key` makes POST retries safe.
@@ -145,6 +161,7 @@ Any other deployment **must** set:
 | `ONEDAY_PUSH_PROVIDER=fcm` + `oneday.google.credentials-file` | FCM HTTP v1 push (Android, and iOS via APNs) with a Google service-account key |
 | `ONEDAY_SMS_PROVIDER=msg91` + `ONEDAY_MSG91_AUTH_KEY`, `ONEDAY_MSG91_TEMPLATE_OTP` / `_TRUSTED_CONTACT` / `_SAFETY_ALERT` | DLT-compliant SMS via MSG91 templates |
 | `ONEDAY_ATTESTATION_MODE` (`off` / `monitor` / `enforce`) + `ONEDAY_ATTESTATION_PROVIDER=play-integrity` + `ONEDAY_ANDROID_PACKAGE` | Device attestation on signup, phone sign-in and location updates. The app takes a single-use challenge from `POST /attestation/challenges` and requests a Play Integrity token with `requestHash = base64url(SHA256(challenge + "\|" + action))`, then sends `X-Device-Integrity: play.<challenge>.<token>`. |
+| `ONEDAY_LIVE_URL`, `ONEDAY_LIVE_API_KEY`, `ONEDAY_LIVE_API_SECRET` (≥ 32 bytes) | Circle Live: a LiveKit-compatible SFU. The API only issues access tokens. |
 | `ONEDAY_TURN_URLS` (comma-separated `turn:`/`turns:` URLs) + `ONEDAY_TURN_SECRET` (coturn `static-auth-secret`), `ONEDAY_STUN_URLS` | TURN relay for calls behind strict NATs. Credentials are minted per request and expire in an hour. |
 | `ONEDAY_APP_ATTEST=true` + `ONEDAY_APPLE_APP_ID` (`<Team ID>.<bundle id>`) + `ONEDAY_APP_ATTEST_ROOT_CA` (default `file:config/apple-app-attestation-root-ca.pem`; download [Apple's App Attestation Root CA](https://www.apple.com/certificateauthority/Apple_App_Attestation_Root_CA.pem) and check its fingerprint) | iOS App Attest alongside Play Integrity: `appattest.`-prefixed tokens go to Apple's checks, everything else to the Android provider. `ONEDAY_APP_ATTEST_ALLOW_DEVELOPMENT=true` accepts development-signed builds. |
 | `ONEDAY_EVENTS_TRANSPORT=kafka` / profile `kafka` + `KAFKA_BOOTSTRAP_SERVERS` | Kafka event transport instead of in-process delivery |

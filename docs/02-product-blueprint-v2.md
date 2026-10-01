@@ -272,7 +272,7 @@ When two people who have a Mutual Spark both confirm *"we're seeing each other"*
 | **v1 (Pilot core)** | Identity + progressive verification, profile (activities, values, languages, roots), privacy-safe location + Safe Zones, Stories (live capture, share scope), Constellation / City / Roots / Language discovery, Heat, Signals + Reaction Window + Digest, Mutual Reveal, Friend-Mode chat, Investment Balance, Dating Lens + Mutual Spark, block/report, Local Pulse, DPDP export/delete | Legal review; T&S on-call staffed |
 | **v1.5 (Dating-ready)** | Date Mode (check-ins, trusted contact, 112, time-boxed exact location), Meeting Points, Trails, Mutual Debrief, Couple Mode, Discretion Mode notifications | **Must ship before any dating-led marketing** |
 | **v2 (Depth)** | Right Now (density-gated), Plans & Rooms, Pulse Status + Spotify, Layered Video, Trusted Vouch, Pacing Guardian, Empathy Mirror, Weekly Recap, E2EE for Friend Mode chat | City density gate met |
-| **v3 (Scale)** | Circle Live, AMA Corridors, Public Figure accounts, Spotlight Replies, Time Capsules, Collaborative Threads, multi-city | Second city gate met |
+| **v3 (Scale)** | Circle Live, AMA Corridors, Public Figure accounts, Spotlight Replies, Time Capsules, Collaborative Threads, multi-city (backend built; interpretations in `07-v3-features.md`) | Second city gate met |
 
 ---
 

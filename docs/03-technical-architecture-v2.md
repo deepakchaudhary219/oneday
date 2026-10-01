@@ -161,6 +161,13 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `POST /conversations/{id}/encrypted` (**V**) · `GET /e2ee/devices/{id}/inbox` · `POST /e2ee/devices/{id}/inbox/ack` | | Encrypted send: `senderDevice`, franking `commitment`, and one envelope per device (`toSelf`, `deviceId`, `PREKEY`/`MESSAGE`, `ciphertext` ≤ 12 KB). The socket pings `e2ee`; the device pulls its inbox and acks, and acked envelopes are deleted. Undelivered ones go after 30 days. |
 | `POST /conversations/{id}/messages/{messageId}/report` | | Franked report of an encrypted message: `plaintext` + `frankingKey` must match the commitment (422 `FRANKING_MISMATCH` otherwise) |
 | `POST /connections/{id}/calls` (**V**) · `GET /calls/{id}` · `POST /calls/{id}/accept` · `/decline` · `/end` · `PUT /calls/{id}/layer` · `POST /calls/{id}/signal` · `GET /calls/ice-servers` | | Layered Video. Calls open once both people have chatted; 6 per hour per pair; one open call per person (`BUSY`). Each person sets `VOICE`/`BLURRED`/`CLEAR` and the call runs at the lower one. Signalling (`OFFER`/`ANSWER`/`ICE`, ≤ 16 KB) is relayed over the socket. Ringing ends as `MISSED` after 45 s and calls end after 3 h. A block ends the call. TURN uses coturn's shared-secret scheme. |
+| `POST /capsules` · `GET /capsules/sent` · `/incoming` · `GET/DELETE /capsules/{id}` | | Time Capsules (v3; docs/07) |
+| `POST /threads` · `GET /threads` · `/threads/{id}` · `/invite` · `/accept` · `/decline` · `/leave` · `DELETE /threads/{id}/members/{handle}` · `GET/POST /threads/{id}/posts` · `DELETE …/posts/{postId}` | | Collaborative Threads (v3) |
+| `POST /moments/{id}/spotlights` · `GET /spotlights/requests` · `POST /spotlights/{id}/accept` · `/decline` · `DELETE /spotlights/{id}` | | Spotlight Replies (v3) |
+| `POST /figures/apply` · `GET /figures/me` · `/figures/{handle}` · `POST/DELETE /figures/{handle}/follow` · `GET /figures/following` · `/figures/feed` · `GET /staff/figures` · `POST /staff/figures/{userId}/decision` | *staff routes: moderator* | Public Figure accounts (v3) |
+| `POST /amas` · `GET /amas` · `GET/DELETE /amas/{id}` · `POST /amas/{id}/questions` · `POST/DELETE …/vote` · `POST …/answer` · `POST …/hide` | | AMA Corridors (v3) |
+| `POST /live` · `GET /live` · `POST /live/{id}/join` · `GET /live/{id}/host` · `POST /live/{id}/end` | | Circle Live (v3): LiveKit-compatible SFU tokens |
+| `GET /cities/current` · `GET /staff/cities` · `PUT /staff/cities/{id}` (*admin*) · `GET /staff/cities/{id}/density` | | Multi-city launch gates (v3) |
 | `GET /empathy/lexicon` | | The Empathy Mirror lexicon for on-device checks (ETag, 304 when unchanged) |
 | `PUT /pulse-status` · `GET /pulse-status/mine` · `DELETE /pulse-status` · `GET /pulse-status/friends` | | Pulse Status: mood, 1–3 emoji, note ≤ 60, optional Spotify track (stored as the track id, shown via the official embed). Friends-only, 24 h, 12 updates/hour. |
 | `GET /consents` · `POST /consents/{purpose}` · `DELETE /consents/{purpose}` · `GET /consents/history` | | DPDP consent per purpose (`LOCATION_DISCOVERY`, `DATING_PREFERENCES`, `ROOTS_AND_LANGUAGES`, `WELLBEING_SURVEY`), each with its notice and withdrawal effect. Withdrawal deletes the data in the same transaction; using it again gives 409 `CONSENT_WITHDRAWN` until it is granted again. |
@@ -249,7 +256,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V29`)
+## 6. Data model (Flyway `V1`–`V36`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -286,6 +293,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `subscriptions` · `payment_webhook_events` (V23) | provider subscription id UQ, status, `current_end`, `cancel_at_cycle_end` · applied webhook ids | Kept on erasure with `user_id` replaced (tax law) |
 | `consent_records` (V24) | `user_id`, `purpose`, `action` (`GRANTED`/`WITHDRAWN`), `notice_version`, `source` (`APP_ACTION`/`SETTINGS`); index (`user_id`, `purpose`, `created_at`) | Append-only; the latest row is the current state. Pseudonymised on erasure: proof of consent stays with the fiduciary (DPDP s.6(10)). |
 | `messages.tone_flag` · `plan_messages.tone_flag` (V26) | Empathy Mirror tone of a message sent anyway, or NULL | Drives the recipient's "does this bother you?" |
+| `time_capsules` (V30) · `threads`, `thread_members`, `thread_posts` (V31) · `spotlights` (V32) · `public_figures`, `figure_follows` (V33) · `amas`, `ama_questions`, `ama_votes` (V34) · `live_sessions`, `live_viewers` (V35) · `cities` + index on `user_locations (cell_lat, cell_lon)` (V36) | see docs/07-v3-features.md | Capsule and thread media are copied to durable prefixes (`capsules/`, `threads/`); threads are purged 3 days after they end, AMAs and lives after 30 days |
 | `calls` (V29) | caller, callee, `status`, `caller_wants` / `callee_wants`, `end_reason`, times | Metadata only (media is never recorded); purged 30 days after the call |
 | `e2ee_devices` · `e2ee_one_time_prekeys` · `e2ee_envelopes` (V28); `messages.encrypted`, `messages.franking_commitment`, `conversations.e2ee`, `reports.verified_evidence` | PK(`user_id`, `device_id`) + `session_id` · PK(`user_id`, `device_id`, `key_id`) · inbox index (`recipient_user_id`, `recipient_device_id`, `created_at`) | Public keys and ciphertext only. Prekeys are claimed by conditional DELETE. Envelopes are deleted on ack or after 30 days. All of it goes on erasure. |
 | `attestation_challenges` · `app_attest_keys` (V27) | challenge PK + `expires_at` · `key_id` PK, `public_key`, `sign_count`, `environment` | Challenges are consumed with one conditional DELETE, so each is single-use across replicas. The counter advances with a conditional UPDATE. |
