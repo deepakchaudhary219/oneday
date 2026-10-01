@@ -61,7 +61,7 @@ public class SecurityConfig {
 				.requestMatchers(devMedia)
 				.permitAll()
 				.requestMatchers(HttpMethod.POST, "/auth/register", "/auth/login", "/auth/refresh",
-						"/auth/otp/request", "/auth/otp/verify")
+						"/auth/otp/request", "/auth/otp/verify", "/attestation/challenges", "/attestation/apple/keys")
 				.permitAll()
 				.requestMatchers("/actuator/health/**", "/actuator/info", "/v3/api-docs/**", "/swagger-ui/**",
 						"/swagger-ui.html", "/error")

@@ -158,6 +158,7 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `GET /plus` · `POST /plus/subscribe` · `POST /plus/cancel` · `POST /webhooks/razorpay` (public, HMAC-signed) | | OneDay Plus (convenience only); the webhook is idempotent by event id |
 | `PUT /pulse-status` · `GET /pulse-status/mine` · `DELETE /pulse-status` · `GET /pulse-status/friends` | | Pulse Status: mood, 1–3 emoji, note ≤ 60, optional Spotify track (stored as the track id, shown via the official embed). Friends-only, 24 h, 12 updates/hour. |
 | `GET /consents` · `POST /consents/{purpose}` · `DELETE /consents/{purpose}` · `GET /consents/history` | | DPDP consent per purpose (`LOCATION_DISCOVERY`, `DATING_PREFERENCES`, `ROOTS_AND_LANGUAGES`, `WELLBEING_SURVEY`), each with its notice and withdrawal effect. Withdrawal deletes the data in the same transaction; using it again gives 409 `CONSENT_WITHDRAWN` until it is granted again. |
+| `POST /attestation/challenges` · `POST /attestation/apple/keys` | *public*, per-IP limits | Single-use 5-minute challenges, and iOS App Attest key registration (Apple's attestation verified once per install). Protected requests then send `X-Device-Integrity: appattest.<keyId>.<challenge>.<assertion>`, where the assertion is over `SHA256(challenge + "\|" + action)`. |
 | any authenticated `POST` with `Idempotency-Key` | | The original response is replayed for a retry (`Idempotent-Replayed: true`); a reused key with a different body gets 422 |
 | `GET /staff/metrics/engagement?weeks=` | *admin* | Weekly Meaningful Actives and the well-spent share, per ISO week |
 | `POST /right-now` (**V**) · `GET /right-now` · `GET /right-now/mine` · `DELETE /right-now` | | Right Now (behind `oneday.right-now.enabled`, Gate 2): an activity for 30–120 min, shown at band precision |
@@ -184,7 +185,7 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
   - Presenting a rotated secret means two parties hold the session, so it ends for both and the holder gets a `SECURITY` notice. The exception is within 30 s, when it counts as a retry after a lost response.
   - Sessions end after 30 idle days, after 180 days in any case, and beyond 10 devices (the least recently used goes first).
 - **Gate:** `SecurityFilterChain` requires `SCOPE_verified` on every **V** route. Services *also* call `UserGuard.requireContactAllowed(userId)`, which re-reads account status and verification status. A token issued before a suspension or re-verification failure therefore cannot be used for contact actions.
-- **Signup abuse (blueprint §47.6):** per-IP rate limit on `/auth/register` in M1. M2 adds Play Integrity / App Attest device attestation.
+- **Signup abuse (blueprint §47.6):** per-IP rate limit on `/auth/register`, plus device attestation on signup, phone sign-in and location updates (Play Integrity on Android, App Attest on iOS; `off → monitor → enforce`). App Attest assertions are bound to a single-use challenge and to the action, and the key's counter must only increase, so a replayed or cloned assertion fails.
 - **Passwords:** delegating encoder (bcrypt default). Sign-in attempts are limited per network (100/h) and per account (10/h). **Phone OTP** (M2) is the primary login method in India. Phone-only accounts have no password and cannot use password login.
 - **Error contract:** RFC 9457 `ProblemDetail` with a stable `code` property and the `requestId`. Unexpected errors return `INTERNAL_ERROR` without internals.
 
@@ -234,7 +235,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V26`)
+## 6. Data model (Flyway `V1`–`V27`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -271,6 +272,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `subscriptions` · `payment_webhook_events` (V23) | provider subscription id UQ, status, `current_end`, `cancel_at_cycle_end` · applied webhook ids | Kept on erasure with `user_id` replaced (tax law) |
 | `consent_records` (V24) | `user_id`, `purpose`, `action` (`GRANTED`/`WITHDRAWN`), `notice_version`, `source` (`APP_ACTION`/`SETTINGS`); index (`user_id`, `purpose`, `created_at`) | Append-only; the latest row is the current state. Pseudonymised on erasure: proof of consent stays with the fiduciary (DPDP s.6(10)). |
 | `messages.tone_flag` · `plan_messages.tone_flag` (V26) | Empathy Mirror tone of a message sent anyway, or NULL | Drives the recipient's "does this bother you?" |
+| `attestation_challenges` · `app_attest_keys` (V27) | challenge PK + `expires_at` · `key_id` PK, `public_key`, `sign_count`, `environment` | Challenges are consumed with one conditional DELETE, so each is single-use across replicas. The counter advances with a conditional UPDATE. |
 | `pulse_statuses` (V25) | PK `user_id`, `id` UQ (new on every update), `mood`, `emoji`, `note`, `spotify_track_id`, `expires_at` (indexed) | One per person; reads filter on expiry and a sweeper deletes expired rows |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 

@@ -87,7 +87,7 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
 - Cached session checks with Redis pub/sub invalidation.
 - The Local Pulse is indexed by time zone and hour.
 - Optional **Kafka** transport (`SPRING_PROFILES_ACTIVE=...,kafka`).
-- **Vendor adapters:** FCM push, MSG91 DLT SMS, and Play Integrity device attestation.
+- **Vendor adapters:** FCM push, MSG91 DLT SMS, Play Integrity (Android) and App Attest (iOS) device attestation.
 
 **Milestone 4 (dating-ready v1.5) so far:**
 - **Date Mode:** plans between Connections, exact location that is time-boxed and needs both people's consent, a trusted contact with a private live link, "Going OK?" check-ins that escalate, one-tap SOS (112), "home safe" end-of-date confirmation, and a Trust & Safety alert desk.
@@ -134,6 +134,7 @@ Any other deployment **must** set:
 | `ONEDAY_PUSH_PROVIDER=fcm` + `oneday.google.credentials-file` | FCM HTTP v1 push (Android, and iOS via APNs) with a Google service-account key |
 | `ONEDAY_SMS_PROVIDER=msg91` + `ONEDAY_MSG91_AUTH_KEY`, `ONEDAY_MSG91_TEMPLATE_OTP` / `_TRUSTED_CONTACT` / `_SAFETY_ALERT` | DLT-compliant SMS via MSG91 templates |
 | `ONEDAY_ATTESTATION_MODE` (`off` / `monitor` / `enforce`) + `ONEDAY_ATTESTATION_PROVIDER=play-integrity` + `ONEDAY_ANDROID_PACKAGE` | Device attestation on signup, phone sign-in and location updates (header `X-Device-Integrity`) |
+| `ONEDAY_APP_ATTEST=true` + `ONEDAY_APPLE_APP_ID` (`<Team ID>.<bundle id>`) + `ONEDAY_APP_ATTEST_ROOT_CA` (default `file:config/apple-app-attestation-root-ca.pem`; download [Apple's App Attestation Root CA](https://www.apple.com/certificateauthority/Apple_App_Attestation_Root_CA.pem) and check its fingerprint) | iOS App Attest alongside Play Integrity: `appattest.`-prefixed tokens go to Apple's checks, everything else to the Android provider. `ONEDAY_APP_ATTEST_ALLOW_DEVELOPMENT=true` accepts development-signed builds. |
 | `ONEDAY_EVENTS_TRANSPORT=kafka` / profile `kafka` + `KAFKA_BOOTSTRAP_SERVERS` | Kafka event transport instead of in-process delivery |
 | `oneday.datasource.replica.jdbc-url` / `.username` / `.password` | Optional MySQL read replica for opt-in heavy reads |
 | `ONEDAY_PLUS_PROVIDER=razorpay` + `ONEDAY_RAZORPAY_KEY_ID` / `_KEY_SECRET` / `_PLAN_ID` / `_WEBHOOK_SECRET`, `ONEDAY_PLUS_PRICE` | OneDay Plus subscriptions. The `dev` profile uses a local gateway that signs webhooks like Razorpay. |

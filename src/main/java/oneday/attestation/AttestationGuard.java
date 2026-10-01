@@ -39,8 +39,9 @@ public class AttestationGuard {
 		this.attestor = attestor;
 		this.metrics = metrics;
 		this.mode = Mode.valueOf(mode.trim().toUpperCase());
-		if (this.mode == Mode.ENFORCE && attestor.getIfAvailable() == null) {
-			throw new IllegalStateException("oneday.attestation.mode=enforce needs oneday.attestation.provider");
+		if (this.mode == Mode.ENFORCE && attestor.orderedStream().findAny().isEmpty()) {
+			throw new IllegalStateException(
+					"oneday.attestation.mode=enforce needs oneday.attestation.provider or oneday.attestation.apple.enabled");
 		}
 	}
 
@@ -49,14 +50,15 @@ public class AttestationGuard {
 		if (mode == Mode.OFF) {
 			return;
 		}
-		DeviceAttestor provider = attestor.getIfAvailable();
+		String trimmed = token == null ? "" : token.trim();
+		DeviceAttestor provider = attestor.orderedStream().filter(a -> a.handles(trimmed)).findFirst().orElse(null);
 		String outcome;
-		if (token == null || token.isBlank() || provider == null) {
+		if (trimmed.isEmpty() || provider == null) {
 			outcome = "missing";
 		}
 		else {
 			try {
-				outcome = provider.verify(token.trim(), action) == DeviceAttestor.Verdict.TRUSTED ? "trusted" : "failed";
+				outcome = provider.verify(trimmed, action) == DeviceAttestor.Verdict.TRUSTED ? "trusted" : "failed";
 			}
 			catch (RuntimeException ex) {
 				log.warn("Device attestation unavailable", ex);

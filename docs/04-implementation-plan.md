@@ -246,7 +246,7 @@ Specified in `05-engagement-psychology.md`. All of it is subject to that documen
 **Remaining before launch:**
 - **Vendor choices that are founder decisions:**
   - the liveness/age-estimation vendor (the `LivenessVerifier` port is ready);
-  - iOS App Attest (the second `DeviceAttestor`);
+  - iOS App Attest is built (§12); what remains is Apple's root certificate file in config and the Team ID;
   - registering the DLT templates and sender id.
 - **Deployment, deferred by decision:**
   - an Indian cloud region;
@@ -268,5 +268,6 @@ Specified in `05-engagement-psychology.md`. All of it is subject to that documen
 | **DPDP consent ledger:** four purposes, each with notice and withdrawal effect. Consent is recorded at the affirmative action. Withdrawal deletes the data in one transaction and refuses further use until consent is granted again. Exported, and pseudonymised on erasure. | `consent`, `geo`, `profile`, `connections`, `wellbeing`, `privacy` | ✅ |
 | **Pulse Status:** mood, emoji, note and Spotify track (official embed); friends-only; 24 h; live to friends' sockets; no seen-by list, push or streak; a check-in prompt for a low mood | `pulsestatus`, `realtime` | ✅ |
 | **Empathy Mirror:** a pre-send reflection for chat and Room messages that may land badly (insult, body shaming, sexual pressure, threat, hate). Uses a pluggable `ToneClassifier`, by default a hot-swappable English/Hinglish/Devanagari lexicon resistant to common evasions. "Send anyway" is always possible, and the recipient is asked "does this bother you?" with the matching report category. `oneday_empathy_mirror{surface,outcome}` | `empathy`, `chat`, `plans` | ✅ |
+| **iOS App Attest:** Apple attestation verified once per install (certificate chain to Apple's root, nonce extension, key id, App ID, counter, environment); per-request assertions bound to a single-use challenge and the action, with a monotonic counter. Coexists with Play Integrity through ordered, token-shaped routing. | `attestation`, `security` | ✅ |
 
-**Verification:** 143 automated tests pass on H2 and MySQL 8.0, including a real WebSocket round trip and the Razorpay adapter against a local fake.
+**Verification:** 147 automated tests pass on H2 and MySQL 8.0, including a real WebSocket round trip and the Razorpay adapter against a local fake.

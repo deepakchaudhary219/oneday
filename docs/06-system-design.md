@@ -126,7 +126,7 @@ Each step changes a deployment and a transport. The domain code stays the same, 
 
 ## 7. Abuse resistance at scale
 
-- **Device attestation** (Play Integrity) on signup, phone sign-in and location updates, rolled out `monitor → enforce` behind a metric (`oneday_attestation{outcome}`).
+- **Device attestation** on signup, phone sign-in and location updates: Play Integrity (Android) and App Attest (iOS) behind one port, chosen by token shape. It is rolled out `monitor → enforce` behind a metric (`oneday_attestation{outcome}`, `oneday_app_attest{step,outcome}`). App Attest challenges live in MySQL and are consumed atomically, and key counters advance with a compare-and-set UPDATE, so replay protection holds across replicas with no sticky sessions.
 - **Budgets on every approach channel:** signals, Right Now requests, plan requests, vouches.
 - **Location privacy holds under scale:** cell snapping, stable per-pair jitter, probe budgets and k-anonymous map clusters.
 - **Idempotency** prevents duplicate side effects from retries.
