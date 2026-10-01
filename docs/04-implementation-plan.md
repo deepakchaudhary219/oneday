@@ -256,3 +256,13 @@ Specified in `05-engagement-psychology.md`. All of it is subject to that documen
   - alerts on the gauges listed in `06-system-design.md`.
 - **Operations:** the load test at 5× pilot peak, the breach runbook, and the takedown on-call rota (M2 exit criteria).
 - **The mobile app (M3).**
+
+## 12. Round of 1 October 2026 (branch `feature/2026-10-01`)
+
+| Capability | Where | Status |
+|---|---|---|
+| **Real-time delivery:** STOMP/WebSocket, receive-only, JWT and session-checked; per-recipient payloads after commit; Redis fan-out across replicas; sockets closed at token expiry and session end | `realtime`, `chat`, `plans`, `notify`, `dates` | ✅ |
+| **Pacing Guardian:** nudge at 3 unanswered, pause at 5 (until a reply or a day passes), burst slow-down in chat and Rooms; `oneday_pacing{action}` | `chat`, `plans` | ✅ |
+| **OneDay Plus:** Razorpay subscriptions (UPI Autopay), HMAC-verified idempotent webhooks, grace period, cancel at period end, entitlements (radius, hosted plans), payment records detached on erasure | `plus`, `profile`, `discovery`, `rightnow`, `plans` | ✅ |
+
+**Verification:** 127 automated tests pass on H2 and MySQL 8.0, including a real WebSocket round trip and the Razorpay adapter against a local fake.

@@ -154,6 +154,8 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `GET /plans/{id}/requests` · `POST /plans/{id}/requests/{handle}/approve` (**V**) · `/decline` · `GET/POST /plans/{id}/room` | | Opaque request handles (no user ids); a silent decline; the members-only Room |
 | `POST /connections/{id}/vouch` (**V**) · `DELETE` · `GET /vouches/mine` | | Trusted Vouch; strangers see a capped count only |
 | `POST/DELETE /moments/{id}/keep` · `GET /moments/trail` | | Private Memory Trail (area-level location only) |
+| `WS /ws` (STOMP) | | Real time, receive-only: CONNECT with `Authorization: Bearer`; subscribe to `/user/queue/events` only. Events: `message`, `room`, `notice`, `date-location`. |
+| `GET /plus` · `POST /plus/subscribe` · `POST /plus/cancel` · `POST /webhooks/razorpay` (public, HMAC-signed) | | OneDay Plus (convenience only); the webhook is idempotent by event id |
 | any authenticated `POST` with `Idempotency-Key` | | The original response is replayed for a retry (`Idempotent-Replayed: true`); a reused key with a different body gets 422 |
 | `GET /staff/metrics/engagement?weeks=` | *admin* | Weekly Meaningful Actives and the well-spent share, per ISO week |
 | `POST /right-now` (**V**) · `GET /right-now` · `GET /right-now/mine` · `DELETE /right-now` | | Right Now (behind `oneday.right-now.enabled`, Gate 2): an activity for 30–120 min, shown at band precision |
@@ -230,7 +232,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V22`)
+## 6. Data model (Flyway `V1`–`V23`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -264,6 +266,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `plans` · `plan_members` · `plan_messages` (V20) | venue position, capacity, Roots region, `row_version` · member status · Room messages | Plans and Rooms are deleted a day after the plan ends |
 | `vouches` (V21) | PK(`voucher_id`, `vouchee_id`) | Removed on block or erasure |
 | `moments.kept`, `moments.trail_media_ref` (V22) | Memory Trail | Kept stories survive retention with their area only |
+| `subscriptions` · `payment_webhook_events` (V23) | provider subscription id UQ, status, `current_end`, `cancel_at_cycle_end` · applied webhook ids | Kept on erasure with `user_id` replaced (tax law) |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 
 ---

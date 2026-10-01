@@ -57,6 +57,17 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
 - **Trusted Vouch** (`POST /connections/{id}/vouch`): someone who has really talked with you vouches for you. Strangers see only "vouched by N".
 - **Memory Trail** (`POST /moments/{id}/keep`, `GET /moments/trail`): keep your own stories privately past 24 h, with only their ~5 km area.
 
+**Real time, pacing and Plus:**
+- **Real-time delivery** over WebSocket (STOMP at `/ws`): chat, Room messages, notices, and a Date Mode partner's live position.
+  - The app authenticates with its access token on CONNECT and can subscribe only to `/user/queue/events`.
+  - The socket is receive-only; every write stays on the HTTP API.
+  - Events fan out across replicas through Redis.
+- **Pacing Guardian:** a private nudge after 3 unanswered messages, a pause at 5 until the other person replies (or a day passes), and slowing of message bursts.
+- **OneDay Plus** (`GET /plus`, `POST /plus/subscribe`, `POST /plus/cancel`, webhook `POST /webhooks/razorpay`):
+  - billed through Razorpay with UPI Autopay;
+  - adds only a wider radius and more hosted plans;
+  - safety is never paywalled, and the response lists what is never sold.
+
 **Scale and platform** (see [`docs/06-system-design.md`](docs/06-system-design.md)):
 - Pushes and texts are sent after commit through the outbox, never inside a request.
 - `Idempotency-Key` makes POST retries safe.
@@ -113,6 +124,8 @@ Any other deployment **must** set:
 | `ONEDAY_ATTESTATION_MODE` (`off` / `monitor` / `enforce`) + `ONEDAY_ATTESTATION_PROVIDER=play-integrity` + `ONEDAY_ANDROID_PACKAGE` | Device attestation on signup, phone sign-in and location updates (header `X-Device-Integrity`) |
 | `ONEDAY_EVENTS_TRANSPORT=kafka` / profile `kafka` + `KAFKA_BOOTSTRAP_SERVERS` | Kafka event transport instead of in-process delivery |
 | `oneday.datasource.replica.jdbc-url` / `.username` / `.password` | Optional MySQL read replica for opt-in heavy reads |
+| `ONEDAY_PLUS_PROVIDER=razorpay` + `ONEDAY_RAZORPAY_KEY_ID` / `_KEY_SECRET` / `_PLAN_ID` / `_WEBHOOK_SECRET`, `ONEDAY_PLUS_PRICE` | OneDay Plus subscriptions. The `dev` profile uses a local gateway that signs webhooks like Razorpay. |
+| `ONEDAY_REALTIME_ORIGINS` | Allowed origins for the WebSocket handshake (default `*`; native apps don't send an origin) |
 | `ONEDAY_RIGHT_NOW` | `true` turns on Right Now. Leave it off until a city meets density Gate 2 (`docs/04` §5). |
 | `ONEDAY_API_DOCS` | `true` publishes `/v3/api-docs` and Swagger UI. Off by default outside the `dev` profile. |
 | `ONEDAY_BOOTSTRAP_ADMIN_IDS` | Comma-separated **user ids** that act as the first Trust & Safety admins. Take the id from the `sub` of your own token. Ids, not emails: emails aren't ownership-verified yet. |

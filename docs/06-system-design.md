@@ -41,6 +41,19 @@ Mobile app ── HTTPS ──► Load balancer ──► OneDay API (stateless 
 
 ---
 
+## 2a. Real-time delivery
+
+```
+service (after commit) ── RealtimeService ──► memory: SimpMessagingTemplate → sockets on this replica
+                                         └──► redis: PUBLISH oneday:realtime → every replica → its own sockets
+```
+
+- **Server to client only.** Writes stay on the HTTP API, so validation, budgets, idempotency and the outbox apply unchanged.
+- **Same auth as the API.** The socket uses the same JWT decoder and sign-in session check, and may subscribe only to `/user/queue/events`.
+- **Sockets don't outlive access.** A socket is closed at token expiry, and within 30 s of its session ending.
+- **Best effort by design.** A missed event is caught up on the next fetch; the database is the source of truth.
+- **Next step at scale:** dedicated socket nodes behind the same Redis fan-out, or a managed pub/sub.
+
 ## 3. Data flow: the transactional outbox
 
 ```
