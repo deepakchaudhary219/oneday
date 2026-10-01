@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # End-to-end smoke test against a running stack (e.g. `docker compose up`) using the dev liveness provider:
 # sign up, verify, upload a photo straight to object storage with a signed URL, wait for the worker, publish,
-# signal, reveal, refresh and sign out, then erase the account and check the stored object is gone.
+# signal, reveal; consent, Pulse Status, chat and the Empathy Mirror, a layered call, an end-to-end encrypted
+# message through a device inbox, an attestation challenge; refresh and sign out, then erase the account and
+# check the stored object is gone.
 # Needs curl, jq and base64.
 #
 #   scripts/smoke-test.sh [http://localhost:8080]
@@ -62,6 +64,48 @@ if grep -aq Lavc "$WORK/served.jpg"; then fail "served photo still carries metad
 
 SIGNAL=$(json "$B/signals" -H "Authorization: Bearer $RAVI" -d "{\"momentId\":\"$MOMENT\",\"reaction\":\"MADE_ME_SMILE\",\"activityRef\":\"trek\"}" | jq -r .id)
 [ "$(code -X POST "$B/signals/$SIGNAL/reveal" -H "Authorization: Bearer $ASHA")" = 200 ] || fail "reveal"
+
+# Consent was recorded when location was first shared (DPDP s.6).
+[ "$(curl -sS "$B/consents" -H "Authorization: Bearer $ASHA" | jq -r '.[] | select(.purpose=="LOCATION_DISCOVERY") | .state')" = GRANTED ] \
+  || fail "location consent not recorded"
+
+# Pulse Status reaches the new friend.
+[ "$(code -X PUT "$B/pulse-status" -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' -d '{"mood":"CHILL","emoji":"🎧"}')" = 200 ] || fail "pulse status"
+[ "$(curl -sS "$B/pulse-status/friends" -H "Authorization: Bearer $RAVI" | jq -r '.[0].emoji')" = "🎧" ] || fail "friend can't see pulse status"
+
+# Chat both ways; the Empathy Mirror reflects an unkind message back before it is sent.
+CONNECTION=$(curl -sS "$B/connections" -H "Authorization: Bearer $ASHA" | jq -r '.[0].id')
+CONVERSATION=$(curl -sS "$B/connections" -H "Authorization: Bearer $ASHA" | jq -r '.[0].conversationId')
+[ "$(code "$B/conversations/$CONVERSATION/messages" -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' -d '{"body":"Chai at 6?"}')" = 201 ] || fail "chat"
+[ "$(code "$B/conversations/$CONVERSATION/messages" -H "Authorization: Bearer $RAVI" -H 'Content-Type: application/json' -d '{"body":"Yes!"}')" = 201 ] || fail "chat reply"
+[ "$(json "$B/conversations/$CONVERSATION/messages" -H "Authorization: Bearer $ASHA" -d '{"body":"you are so stupid"}' | jq -r .code)" = EMPATHY_CHECK ] || fail "empathy mirror"
+
+# A layered call: voice first, video only as far as both choose.
+CALL=$(json "$B/connections/$CONNECTION/calls" -H "Authorization: Bearer $ASHA" -X POST | jq -r '.id // empty')
+[ -n "$CALL" ] || fail "call start"
+[ "$(json "$B/calls/$CALL/accept" -H "Authorization: Bearer $RAVI" -X POST | jq -r .status)" = ACTIVE ] || fail "call accept"
+json "$B/calls/$CALL/layer" -H "Authorization: Bearer $ASHA" -X PUT -d '{"wants":"CLEAR"}' > /dev/null
+[ "$(json "$B/calls/$CALL/layer" -H "Authorization: Bearer $RAVI" -X PUT -d '{"wants":"BLURRED"}' | jq -r .layer)" = BLURRED ] || fail "call layers"
+[ "$(json "$B/calls/$CALL/end" -H "Authorization: Bearer $RAVI" -X POST | jq -r .status)" = ENDED ] || fail "call end"
+
+# End-to-end encrypted chat: register devices, fetch a bundle, send one envelope, pull it and acknowledge it.
+key() { head -c "$1" /dev/urandom | base64 | tr -d '\n'; }
+device() { echo "{\"registrationId\":$((RANDOM % 16000 + 1)),\"identityKey\":\"$(key 33)\",\"signedPreKey\":{\"keyId\":1,\"publicKey\":\"$(key 33)\",\"signature\":\"$(key 64)\"},\"oneTimePreKeys\":[{\"keyId\":1,\"publicKey\":\"$(key 33)\"}]}"; }
+ASHA_DEVICE=$(json "$B/e2ee/devices" -H "Authorization: Bearer $ASHA" -d "$(device)" | jq -r '.deviceId // empty')
+RAVI_DEVICE=$(json "$B/e2ee/devices" -H "Authorization: Bearer $RAVI" -d "$(device)" | jq -r '.deviceId // empty')
+[ -n "$ASHA_DEVICE" ] && [ -n "$RAVI_DEVICE" ] || fail "e2ee device registration"
+[ "$(curl -sS "$B/e2ee/connections/$CONNECTION/bundles" -H "Authorization: Bearer $ASHA" | jq -r '.[0].oneTimePreKey.keyId')" = 1 ] || fail "e2ee bundle"
+CIPHER=$(key 48)
+SENT=$(json "$B/conversations/$CONVERSATION/encrypted" -H "Authorization: Bearer $ASHA" \
+  -d "{\"senderDevice\":$ASHA_DEVICE,\"commitment\":\"$(key 32)\",\"envelopes\":[{\"toSelf\":false,\"deviceId\":$RAVI_DEVICE,\"type\":\"PREKEY\",\"ciphertext\":\"$CIPHER\"}]}")
+[ "$(echo "$SENT" | jq -r .encrypted)" = true ] || fail "e2ee send: $SENT"
+INBOX=$(curl -sS "$B/e2ee/devices/$RAVI_DEVICE/inbox" -H "Authorization: Bearer $RAVI")
+[ "$(echo "$INBOX" | jq -r '.[0].ciphertext')" = "$CIPHER" ] || fail "e2ee inbox: $INBOX"
+[ "$(json "$B/e2ee/devices/$RAVI_DEVICE/inbox/ack" -H "Authorization: Bearer $RAVI" -d "{\"envelopeIds\":[\"$(echo "$INBOX" | jq -r '.[0].envelopeId')\"]}" | jq -r .deleted)" = 1 ] || fail "e2ee ack"
+[ "$(code "$B/conversations/$CONVERSATION/messages" -H "Authorization: Bearer $ASHA" -H 'Content-Type: application/json' -d '{"body":"in clear"}')" = 409 ] || fail "e2ee downgrade allowed"
+
+# Device attestation hands out single-use challenges before sign-up.
+[ "$(code -X POST "$B/attestation/challenges")" = 201 ] || fail "attestation challenge"
 
 # Sessions: the refresh token rotates (the old one is then refused), and signing out cuts the access token off.
 RENEWED=$(json "$B/auth/refresh" -d "{\"refreshToken\":\"$(cat "$WORK/ravi.refresh")\"}")
