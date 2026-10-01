@@ -129,7 +129,7 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `POST /connections/{id}/exit` | | Soft exit (no notification) |
 | `GET /conversations/{id}/messages` · `POST` (**V**) | | Friend-Mode chat |
 | `GET /conversations/{id}/balance` | | Qualitative Investment Balance for the viewer |
-| `POST /safety/blocks` · `POST /safety/reports` | | Target by `momentId`, `signalId` or `connectionId`. Internal user IDs are never exposed. |
+| `POST /safety/blocks` · `POST /safety/reports` | | Target by exactly one of `momentId`, `signalId`, `connectionId`, `planId`, `roomMessageId`, `rightNowId`, `dateId` or `pulseStatusId` (modules contribute `SafetyTargetResolver` beans). A target the caller can't see is 404. Internal user IDs are never exposed. |
 | `GET /pulse` | | Local Pulse digest (counts capped at "9+") |
 | `GET /privacy/export` · `DELETE /privacy/account` | | DPDP / GDPR access and erasure (also deletes media objects after commit). Under a safety hold, erasure is deferred without any visible difference (§8). |
 | `POST /devices` · `POST /devices/unregister` | | Push-token registration (≤ 5 per account, tokens never echoed back) |
@@ -154,8 +154,10 @@ All endpoints except sign-up, sign-in, `/auth/refresh`, OTP, health, API docs an
 | `GET /plans/{id}/requests` · `POST /plans/{id}/requests/{handle}/approve` (**V**) · `/decline` · `GET/POST /plans/{id}/room` | | Opaque request handles (no user ids); a silent decline; the members-only Room |
 | `POST /connections/{id}/vouch` (**V**) · `DELETE` · `GET /vouches/mine` | | Trusted Vouch; strangers see a capped count only |
 | `POST/DELETE /moments/{id}/keep` · `GET /moments/trail` | | Private Memory Trail (area-level location only) |
-| `WS /ws` (STOMP) | | Real time, receive-only: CONNECT with `Authorization: Bearer`; subscribe to `/user/queue/events` only. Events: `message`, `room`, `notice`, `date-location`. |
+| `WS /ws` (STOMP) | | Real time, receive-only: CONNECT with `Authorization: Bearer`; subscribe to `/user/queue/events` only. Events: `message`, `room`, `notice`, `date-location`, `pulse-status`, `pulse-status-cleared`. |
 | `GET /plus` · `POST /plus/subscribe` · `POST /plus/cancel` · `POST /webhooks/razorpay` (public, HMAC-signed) | | OneDay Plus (convenience only); the webhook is idempotent by event id |
+| `PUT /pulse-status` · `GET /pulse-status/mine` · `DELETE /pulse-status` · `GET /pulse-status/friends` | | Pulse Status: mood, 1–3 emoji, note ≤ 60, optional Spotify track (stored as the track id, shown via the official embed). Friends-only, 24 h, 12 updates/hour. |
+| `GET /consents` · `POST /consents/{purpose}` · `DELETE /consents/{purpose}` · `GET /consents/history` | | DPDP consent per purpose (`LOCATION_DISCOVERY`, `DATING_PREFERENCES`, `ROOTS_AND_LANGUAGES`, `WELLBEING_SURVEY`), each with its notice and withdrawal effect. Withdrawal deletes the data in the same transaction; using it again gives 409 `CONSENT_WITHDRAWN` until it is granted again. |
 | any authenticated `POST` with `Idempotency-Key` | | The original response is replayed for a retry (`Idempotent-Replayed: true`); a reused key with a different body gets 422 |
 | `GET /staff/metrics/engagement?weeks=` | *admin* | Weekly Meaningful Actives and the well-spent share, per ISO week |
 | `POST /right-now` (**V**) · `GET /right-now` · `GET /right-now/mine` · `DELETE /right-now` | | Right Now (behind `oneday.right-now.enabled`, Gate 2): an activity for 30–120 min, shown at band precision |
@@ -232,7 +234,7 @@ Someone who is physically present, or who probes slowly across days, can learn w
 
 ---
 
-## 6. Data model (Flyway `V1`–`V23`)
+## 6. Data model (Flyway `V1`–`V25`)
 
 | Table | Key columns | Notes |
 |---|---|---|
@@ -267,6 +269,8 @@ Someone who is physically present, or who probes slowly across days, can learn w
 | `vouches` (V21) | PK(`voucher_id`, `vouchee_id`) | Removed on block or erasure |
 | `moments.kept`, `moments.trail_media_ref` (V22) | Memory Trail | Kept stories survive retention with their area only |
 | `subscriptions` · `payment_webhook_events` (V23) | provider subscription id UQ, status, `current_end`, `cancel_at_cycle_end` · applied webhook ids | Kept on erasure with `user_id` replaced (tax law) |
+| `consent_records` (V24) | `user_id`, `purpose`, `action` (`GRANTED`/`WITHDRAWN`), `notice_version`, `source` (`APP_ACTION`/`SETTINGS`); index (`user_id`, `purpose`, `created_at`) | Append-only; the latest row is the current state. Pseudonymised on erasure: proof of consent stays with the fiduciary (DPDP s.6(10)). |
+| `pulse_statuses` (V25) | PK `user_id`, `id` UQ (new on every update), `mood`, `emoji`, `note`, `spotify_track_id`, `expires_at` (indexed) | One per person; reads filter on expiry and a sweeper deletes expired rows |
 | `otp_challenges` (V4) | `phone_hash`, `code_hash`, `attempts`, `expires_at`, `consumed_at` | Keyed HMACs only. Swept after a day. V4 also adds `users.phone` and makes email/password nullable. |
 
 ---
@@ -292,6 +296,7 @@ PENDING ──reveal──► REVEALED  (Connection + Conversation created atomi
 | Obligation | Engineering control | Milestone |
 |---|---|---|
 | DPDP: notice & consent | `consent_version` + `consented_at` recorded at signup. Notice text is versioned in the app. | M1 ✅ |
+| DPDP s.6: consent per purpose, withdrawable with comparable ease, provable | Append-only consent ledger per purpose, with notice version and source. It is recorded at the affirmative action. Withdrawal runs each owning module's `ConsentWithdrawalEffect` in one transaction (data deleted, further use refused with 409). The history is in the export and is pseudonymised on erasure. | ✅ |
 | DPDP: rights (access, erasure, correction, grievance) | `GET /privacy/export`, `DELETE /privacy/account`, `PUT /profile/me`, `POST /grievances` (category `PRIVACY`, answer routed to the Data Protection Board if not satisfied). Suspended accounts keep these rights through a restricted sign-in. | M1 ✅ / M2 ✅ |
 | DPDP: children | **Refuse under-18 at signup** (nothing persisted). Liveness age-estimate cross-check. `UNDERAGE_SUSPECTED` reports go to P0. | M1 ✅ |
 | DPDP: breach notice within 72 h | Runbook, audit log, on-call rota, contact template for the Data Protection Board | M2 |

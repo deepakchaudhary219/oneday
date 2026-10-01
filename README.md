@@ -58,7 +58,7 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
 - **Memory Trail** (`POST /moments/{id}/keep`, `GET /moments/trail`): keep your own stories privately past 24 h, with only their ~5 km area.
 
 **Real time, pacing and Plus:**
-- **Real-time delivery** over WebSocket (STOMP at `/ws`): chat, Room messages, notices, and a Date Mode partner's live position.
+- **Real-time delivery** over WebSocket (STOMP at `/ws`): chat, Room messages, notices, friends' Pulse Status, and a Date Mode partner's live position.
   - The app authenticates with its access token on CONNECT and can subscribe only to `/user/queue/events`.
   - The socket is receive-only; every write stays on the HTTP API.
   - Events fan out across replicas through Redis.
@@ -67,6 +67,14 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
   - billed through Razorpay with UPI Autopay;
   - adds only a wider radius and more hosted plans;
   - safety is never paywalled, and the response lists what is never sold.
+
+**Friends and privacy controls:**
+- **Pulse Status** (`PUT/GET/DELETE /pulse-status`, `GET /pulse-status/friends`): a mood, one to three emoji, an optional note and an optional Spotify track (official embed only). Friends-only and gone after 24 h. There is no seen-by list, no push and no streak, and a low mood shows friends a check-in prompt instead of a like.
+- **Consent per purpose** (`GET /consents`, `POST/DELETE /consents/{purpose}`, `GET /consents/history`), for DPDP s.6:
+  - consent is recorded at the first action that uses the data (sharing location, setting the Dating Lens, adding a home region, answering the wellbeing question);
+  - withdrawing deletes that data at once and blocks its use until it is granted again;
+  - the history is included in the export and is pseudonymised, not deleted, on erasure.
+- **Safety from every surface:** block or report by `momentId`, `signalId`, `connectionId`, `planId`, `roomMessageId`, `rightNowId`, `dateId` or `pulseStatusId`.
 
 **Scale and platform** (see [`docs/06-system-design.md`](docs/06-system-design.md)):
 - Pushes and texts are sent after commit through the outbox, never inside a request.

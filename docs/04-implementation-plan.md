@@ -264,5 +264,8 @@ Specified in `05-engagement-psychology.md`. All of it is subject to that documen
 | **Real-time delivery:** STOMP/WebSocket, receive-only, JWT and session-checked; per-recipient payloads after commit; Redis fan-out across replicas; sockets closed at token expiry and session end | `realtime`, `chat`, `plans`, `notify`, `dates` | ✅ |
 | **Pacing Guardian:** nudge at 3 unanswered, pause at 5 (until a reply or a day passes), burst slow-down in chat and Rooms; `oneday_pacing{action}` | `chat`, `plans` | ✅ |
 | **OneDay Plus:** Razorpay subscriptions (UPI Autopay), HMAC-verified idempotent webhooks, grace period, cancel at period end, entitlements (radius, hosted plans), payment records detached on erasure | `plus`, `profile`, `discovery`, `rightnow`, `plans` | ✅ |
+| **Safety from every surface:** Plans, Room messages, Right Now and dates are blockable and reportable where people meet them. Modules contribute `SafetyTargetResolver` beans, and a target the caller can't see is 404. | `safety`, `plans`, `rightnow`, `dates`, `pulsestatus` | ✅ |
+| **DPDP consent ledger:** four purposes, each with notice and withdrawal effect. Consent is recorded at the affirmative action. Withdrawal deletes the data in one transaction and refuses further use until consent is granted again. Exported, and pseudonymised on erasure. | `consent`, `geo`, `profile`, `connections`, `wellbeing`, `privacy` | ✅ |
+| **Pulse Status:** mood, emoji, note and Spotify track (official embed); friends-only; 24 h; live to friends' sockets; no seen-by list, push or streak; a check-in prompt for a low mood | `pulsestatus`, `realtime` | ✅ |
 
-**Verification:** 127 automated tests pass on H2 and MySQL 8.0, including a real WebSocket round trip and the Razorpay adapter against a local fake.
+**Verification:** 137 automated tests pass on H2 and MySQL 8.0, including a real WebSocket round trip and the Razorpay adapter against a local fake.
