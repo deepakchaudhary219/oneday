@@ -1,5 +1,7 @@
 package oneday.identity;
 
+import oneday.attestation.AttestationGuard;
+
 import java.time.LocalDate;
 
 import oneday.identity.OtpService.ChallengeView;
@@ -24,8 +26,11 @@ public class PhoneAuthController {
 
 	private final OtpService otp;
 
-	public PhoneAuthController(OtpService otp) {
+	private final AttestationGuard attestation;
+
+	public PhoneAuthController(OtpService otp, AttestationGuard attestation) {
 		this.otp = otp;
+		this.attestation = attestation;
 	}
 
 	@PostMapping("/request")
@@ -36,6 +41,7 @@ public class PhoneAuthController {
 
 	@PostMapping("/verify")
 	PhoneAuthResult verify(@Valid @RequestBody OtpVerify request, HttpServletRequest http) {
+		attestation.check(http.getHeader(AttestationGuard.HEADER), request.displayName() == null ? "signin" : "signup");
 		return otp.verify(request.challengeId(), request.phone(), request.code(),
 				new SignupDetails(request.displayName(), request.dateOfBirth(), request.consentVersion()),
 				ClientInfo.of(http));

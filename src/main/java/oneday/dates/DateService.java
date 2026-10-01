@@ -37,6 +37,7 @@ import oneday.profile.Profile;
 import oneday.profile.ProfileService;
 import oneday.safety.BlockChecker;
 import oneday.sms.PhoneNumbers;
+import oneday.sms.SmsTemplate;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -285,7 +286,8 @@ public class DateService {
 		String url = shareUrl(token);
 		Profile me = profiles.require(userId);
 		String when = WHEN.format(plan.getStartsAt().atZone(ZoneId.of(me.getTimeZone())));
-		boolean texted = sms.text(phone, me.firstName() + " added you as their trusted contact for a meet-up on OneDay: "
+		boolean texted = sms.text(phone, SmsTemplate.TRUSTED_CONTACT, Map.of("name", me.firstName(), "place",
+				plan.getPlaceName(), "when", when, "url", url, "emergency", emergencyFor(userId)), me.firstName() + " added you as their trusted contact for a meet-up on OneDay: "
 				+ plan.getPlaceName() + ", " + when + ". Follow along until it ends: " + url
 				+ " If you are worried and can't reach them, call " + emergencyFor(userId) + ".");
 		return new TrustedContactView(contactName, maskPhone(phone), url, texted);
