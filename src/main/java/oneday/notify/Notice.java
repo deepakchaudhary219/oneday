@@ -24,7 +24,9 @@ public class Notice {
 		/** Something happened to your sign-ins, e.g. a device was signed out because its session was copied. */
 		SECURITY,
 		/** A grievance you filed was received or answered. */
-		GRIEVANCE_UPDATE
+		GRIEVANCE_UPDATE,
+		/** Something about your own account, e.g. the periodic re-verification is due. */
+		ACCOUNT
 	}
 
 	@Id

@@ -1,5 +1,6 @@
 package oneday.discovery;
 
+import oneday.platform.ReplicaReads;
 import java.util.List;
 
 import oneday.discovery.DiscoveryViews.Constellation;
@@ -27,11 +28,11 @@ public class DiscoveryController {
 	Constellation constellation(@AuthenticationPrincipal Jwt jwt,
 			@RequestParam(defaultValue = "RADIUS") DiscoveryScope scope,
 			@RequestParam(required = false) String activity, @RequestParam(defaultValue = "0") int page) {
-		return discovery.constellation(jwt.getSubject(), scope, activity, page);
+		return ReplicaReads.run(() -> discovery.constellation(jwt.getSubject(), scope, activity, page));
 	}
 
 	@GetMapping("/heat")
 	List<HeatCell> heat(@AuthenticationPrincipal Jwt jwt) {
-		return discovery.heat(jwt.getSubject());
+		return ReplicaReads.run(() -> discovery.heat(jwt.getSubject()));
 	}
 }

@@ -37,6 +37,7 @@ import oneday.profile.Profile;
 import oneday.profile.ProfileService;
 import oneday.safety.BlockChecker;
 import oneday.sms.PhoneNumbers;
+import oneday.sms.SmsTemplate;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -153,7 +154,7 @@ public class DateService {
 		Instant checkIn = defaultCheckIn(plan);
 		participants.save(new DateParticipant(plan.getId(), userId, checkIn));
 		participants.save(new DateParticipant(plan.getId(), partnerId, checkIn));
-		notifications.pushToUser(partnerId, "New plan", "You have a new plan to look at",
+		notifications.requestPush(partnerId, "New plan", "You have a new plan to look at",
 				Map.of("open", "dates", "dateId", plan.getId()));
 		metrics.counter("oneday.dates.proposed").increment();
 		return view(plan, userId);
@@ -172,7 +173,7 @@ public class DateService {
 		plan.confirm(clock.instant());
 		events.publish(new DomainEvent.DateConfirmed(plan.getId(), plan.getProposerId(), plan.getPartnerId(),
 				plan.getStartsAt()));
-		notifications.pushToUser(plan.getProposerId(), "Plan confirmed", "Your plan is on",
+		notifications.requestPush(plan.getProposerId(), "Plan confirmed", "Your plan is on",
 				Map.of("open", "dates", "dateId", plan.getId()));
 		metrics.counter("oneday.dates.confirmed").increment();
 		return view(plan, userId);
@@ -285,7 +286,8 @@ public class DateService {
 		String url = shareUrl(token);
 		Profile me = profiles.require(userId);
 		String when = WHEN.format(plan.getStartsAt().atZone(ZoneId.of(me.getTimeZone())));
-		boolean texted = sms.text(phone, me.firstName() + " added you as their trusted contact for a meet-up on OneDay: "
+		boolean texted = sms.text(phone, SmsTemplate.TRUSTED_CONTACT, Map.of("name", me.firstName(), "place",
+				plan.getPlaceName(), "when", when, "url", url, "emergency", emergencyFor(userId)), me.firstName() + " added you as their trusted contact for a meet-up on OneDay: "
 				+ plan.getPlaceName() + ", " + when + ". Follow along until it ends: " + url
 				+ " If you are worried and can't reach them, call " + emergencyFor(userId) + ".");
 		return new TrustedContactView(contactName, maskPhone(phone), url, texted);
@@ -431,7 +433,7 @@ public class DateService {
 		List<DateParticipant> due = participants.findCheckInsDue(now);
 		for (DateParticipant p : due) {
 			p.prompted(now);
-			notifications.pushToUser(p.getUserId(), "Going OK?", "Tap to check in",
+			notifications.requestPush(p.getUserId(), "Going OK?", "Tap to check in",
 					Map.of("open", "dates", "dateId", p.getDateId(), "action", "check-in"));
 		}
 		return due.size();

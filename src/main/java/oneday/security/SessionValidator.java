@@ -11,7 +11,7 @@ import org.springframework.security.oauth2.jwt.Jwt;
 /**
  * An access token is only as good as its session: signing out, reuse detection, suspension and erasure take
  * effect on the next request rather than when the token would have expired. One primary-key lookup per
- * request; the client answers the 401 by refreshing, and a failed refresh sends it to sign-in.
+ * request, cached briefly by {@link SessionLivenessCache}; the client answers the 401 by refreshing, and a failed refresh sends it to sign-in.
  */
 final class SessionValidator implements OAuth2TokenValidator<Jwt> {
 
@@ -22,15 +22,25 @@ final class SessionValidator implements OAuth2TokenValidator<Jwt> {
 
 	private final Clock clock;
 
-	SessionValidator(SessionRepository sessions, Clock clock) {
+	private final SessionLivenessCache cache;
+
+	SessionValidator(SessionRepository sessions, Clock clock, SessionLivenessCache cache) {
 		this.sessions = sessions;
 		this.clock = clock;
+		this.cache = cache;
 	}
 
 	@Override
 	public OAuth2TokenValidatorResult validate(Jwt jwt) {
 		String sessionId = jwt.getClaimAsString(TokenService.SESSION_CLAIM);
-		if (sessionId != null && sessions.existsByIdAndEndedAtIsNullAndExpiresAtAfter(sessionId, clock.instant())) {
+		if (sessionId == null) {
+			return OAuth2TokenValidatorResult.failure(SESSION_ENDED);
+		}
+		if (cache.isKnownLive(sessionId)) {
+			return OAuth2TokenValidatorResult.success();
+		}
+		if (sessions.existsByIdAndEndedAtIsNullAndExpiresAtAfter(sessionId, clock.instant())) {
+			cache.rememberLive(sessionId, jwt.getSubject());
 			return OAuth2TokenValidatorResult.success();
 		}
 		return OAuth2TokenValidatorResult.failure(SESSION_ENDED);

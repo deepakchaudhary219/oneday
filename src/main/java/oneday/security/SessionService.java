@@ -59,8 +59,12 @@ public class SessionService {
 
 	private final ProductMetrics metrics;
 
+	private final SessionLivenessCache liveness;
+
 	public SessionService(SessionRepository sessions, UserRepository users, TokenService tokens,
-			NotificationService notifications, Clock clock, OneDayProperties properties, ProductMetrics metrics) {
+			NotificationService notifications, Clock clock, OneDayProperties properties, ProductMetrics metrics,
+			SessionLivenessCache liveness) {
+		this.liveness = liveness;
 		this.metrics = metrics;
 		this.sessions = sessions;
 		this.users = users;
@@ -82,7 +86,7 @@ public class SessionService {
 			.filter(s -> !s.getId().equals(session.getId()))
 			.toList();
 		if (active.size() > settings.maxSessions() - 1) {
-			active.subList(settings.maxSessions() - 1, active.size()).forEach(s -> s.end(EndReason.DEVICE_LIMIT, now));
+			active.subList(settings.maxSessions() - 1, active.size()).forEach(s -> end(s, EndReason.DEVICE_LIMIT, now));
 		}
 		return tokens.issue(user, session.getId(), session.getId() + "." + secret);
 	}
@@ -113,7 +117,7 @@ public class SessionService {
 		if (!session.isCurrent(presented)) {
 			retry = session.isRetryOfLastRotation(presented, now, settings.refreshReuseGrace());
 			if (!retry) {
-				session.end(EndReason.REUSE_DETECTED, now);
+				end(session, EndReason.REUSE_DETECTED, now);
 				log.warn("Refresh token reuse: ended session {}", session.getId());
 				metrics.refreshTokenReused();
 				notifications.notice(session.getUserId(), Notice.Kind.SECURITY,
@@ -143,7 +147,7 @@ public class SessionService {
 	public void signOut(String userId, String sessionId) {
 		sessions.findById(sessionId)
 			.filter(s -> s.getUserId().equals(userId))
-			.ifPresent(s -> s.end(EndReason.SIGNED_OUT, clock.instant()));
+			.ifPresent(s -> end(s, EndReason.SIGNED_OUT, clock.instant()));
 	}
 
 	/** Signs out another of the holder's devices, e.g. a lost phone. */
@@ -152,7 +156,7 @@ public class SessionService {
 		Session session = sessions.findById(sessionId)
 			.filter(s -> s.getUserId().equals(userId))
 			.orElseThrow(() -> ApiException.notFound("Session"));
-		session.end(EndReason.SIGNED_OUT_ELSEWHERE, clock.instant());
+		end(session, EndReason.SIGNED_OUT_ELSEWHERE, clock.instant());
 	}
 
 	@Transactional
@@ -164,7 +168,7 @@ public class SessionService {
 	@Transactional
 	public void endAll(String userId, EndReason reason) {
 		Instant now = clock.instant();
-		sessions.findActive(userId, now).forEach(s -> s.end(reason, now));
+		sessions.findActive(userId, now).forEach(s -> end(s, reason, now));
 	}
 
 	@Transactional(readOnly = true)
@@ -176,6 +180,13 @@ public class SessionService {
 	@Transactional
 	public void forget(String userId) {
 		sessions.deleteByUserId(userId);
+		liveness.evictUser(userId);
+	}
+
+	/** Every session end goes through here, so the per-request liveness cache never outlives it. */
+	private void end(Session session, EndReason reason, Instant now) {
+		session.end(reason, now);
+		liveness.evict(session.getId());
 	}
 
 	@Scheduled(fixedDelayString = "PT6H", initialDelayString = "PT10M")

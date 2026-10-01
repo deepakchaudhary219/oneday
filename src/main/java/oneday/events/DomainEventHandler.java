@@ -3,7 +3,7 @@ package oneday.events;
 import java.util.function.BiConsumer;
 
 /**
- * A consumer of one event type. Delivery is at least once; the {@link InProcessEventTransport} makes it
+ * A consumer of one event type. Delivery is at least once; the {@link EventDispatcher} makes it
  * effectively once per handler by recording {@link #name()} with the event id in the same transaction as
  * {@link #handle}. A handler that throws is retried later with the rest of the event's pending consumers.
  *

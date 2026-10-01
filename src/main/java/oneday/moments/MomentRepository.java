@@ -26,6 +26,19 @@ public interface MomentRepository extends JpaRepository<Moment, String> {
 
 	boolean existsByMediaRef(String mediaRef);
 
+	@Query("select count(m) from Moment m where m.relayRootId in :rootIds")
+	long countAllRelayAnswers(@Param("rootIds") Collection<String> rootIds);
+
+	List<Moment> findByExpiresAtBeforeAndKeptFalse(Instant cutoff, Pageable page);
+
+	List<Moment> findByExpiresAtBeforeAndKeptTrueAndCellLatIsNotNull(Instant cutoff, Pageable page);
+
+	List<Moment> findByOwnerIdAndKeptTrueOrderByCreatedAtDesc(String ownerId, Pageable page);
+
+	List<Moment> findByOwnerIdAndKeptTrue(String ownerId);
+
+	List<Moment> findByOwnerIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(String ownerId, Instant from, Instant to);
+
 	boolean existsByRelayRootIdAndOwnerId(String relayRootId, String ownerId);
 
 	List<Moment> findByRelayRootIdAndExpiresAtAfterOrderByRelayDepthAscCreatedAtAsc(String relayRootId, Instant now,

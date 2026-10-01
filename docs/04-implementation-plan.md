@@ -88,7 +88,7 @@ Done in M2 so far: Redis state store, staff console with manual review, media up
 5. Local Pulse at scale: the job scans every user with a device every 10 minutes, which is fine for one city. Index by (time zone, pulse hour) before multi-city.
 6. Pacing Guardian heuristics on the message stream (v2).
 7. Normalised `profile_languages` / `profile_home_region` indexes when Roots scope needs SQL-side filtering.
-8. Re-verification every 90 days (blueprint §21.4) as a scheduled job.
+8. ✅ Re-verification every 90 days (blueprint §21.4) as a scheduled job.
 
 ## 5. Density gates (proposed hypotheses; calibrate in M5)
 
@@ -208,3 +208,51 @@ Specified in `05-engagement-psychology.md`. All of it is subject to that documen
 4. Plans & Rooms.
 5. Memory Trail.
 6. Weekly Recap.
+
+## 10. Backlog round: delivered
+
+| Capability | Where | Status |
+|---|---|---|
+| **Re-verification every 90 days:** one in-app reminder 7 days ahead; at the deadline the status becomes `EXPIRED`. Contact actions answer `REVERIFICATION_REQUIRED` and the person leaves others' discovery, while browsing, data rights, SOS and Date Mode safety keep working. A fresh liveness check restores it. | `verification`, `identity` | ✅ |
+| **Weekly Meaningful Actives and the wellbeing guardrail:** a projection from reveal, spark, couple, relay and date events, plus two-way conversations counted from messages; a rare, deterministic one-tap question; an admin dashboard and the `oneday_wma_current_week` gauge; included in export and erasure | `wellbeing`, `events` | ✅ |
+| **Festival Seasons:** 1–31-day windows for a home region or everyone; precedence scheduled-Roots > Roots festival > scheduled-global > global festival > catalogue; Story Map `season` labels | `prompts`, `discovery` | ✅ |
+| **Weekly Recap:** last local week, one highlight (peak), facts, a kind ending; a Monday flag in the Local Pulse | `ledger`, `pulse` | ✅ |
+| **Story retention:** expired story rows deleted 14 days after expiry unless the owner is under a safety hold. This closes a gap: rows, with their capture cells, were previously kept forever. | `moments`, `privacy` | ✅ |
+| **Right Now** (flagged until Gate 2): band-precision nodes, 5 requests a day, consent-only connection, silent decline, sessions that end on their own | `rightnow` | ✅ |
+
+**Verification:** 109 automated tests pass on H2 and on MySQL 8.0 (the two ffmpeg tests skip in this environment).
+
+**Still open after this round:** see §11.
+
+## 11. Development completion round
+
+| Capability | Where | Status |
+|---|---|---|
+| **Async pushes:** `PushRequested` outbox events; uninstalled-app tokens dropped; retries with backoff | `notify`, `events` | ✅ |
+| **Local Pulse at scale:** per time zone in use, indexed on (`time_zone`, `pulse_hour`) | `notify`, `profile` | ✅ |
+| **Idempotency-Key** for authenticated POSTs (database-backed, per account, body-bound, 24 h) | `platform` | ✅ |
+| **Opt-in read replica** (routing data source; only `ReplicaReads` inside read-only transactions) | `platform` | ✅ |
+| **Session-check cache** with eviction on every session end and Redis pub/sub broadcast | `security` | ✅ |
+| **Kafka transport:** keyed by aggregate, idempotent producer, consumer group, exponential retry, DLT; tested on an embedded broker | `events` | ✅ |
+| **Plans & Rooms** | `plans` | ✅ |
+| **Trusted Vouch** | `trust`, `discovery`, `signals` | ✅ |
+| **Memory Trail** | `moments`, `media` | ✅ |
+| **FCM HTTP v1 push adapter** (Google service-account OAuth, shared) | `notify`, `integrations` | ✅ |
+| **MSG91 DLT SMS adapter** (template-only SMS) | `sms` | ✅ |
+| **Play Integrity attestation** with an off/monitor/enforce rollout | `attestation` | ✅ |
+
+**Verification:** 121 automated tests pass on H2 and on MySQL 8.0. The two ffmpeg tests skip in this environment. The Kafka test runs against an embedded broker, and the vendor adapters run against a local fake vendor.
+
+**Remaining before launch:**
+- **Vendor choices that are founder decisions:**
+  - the liveness/age-estimation vendor (the `LivenessVerifier` port is ready);
+  - iOS App Attest (the second `DeviceAttestor`);
+  - registering the DLT templates and sender id.
+- **Deployment, deferred by decision:**
+  - an Indian cloud region;
+  - managed MySQL with replicas, Redis and Kafka;
+  - separate media-worker and notification deployments;
+  - a CDN;
+  - alerts on the gauges listed in `06-system-design.md`.
+- **Operations:** the load test at 5× pilot peak, the breach runbook, and the takedown on-call rota (M2 exit criteria).
+- **The mobile app (M3).**

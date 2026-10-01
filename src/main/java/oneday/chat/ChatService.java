@@ -149,6 +149,12 @@ public class ChatService {
 		return new Rhythm(mutualDays, last);
 	}
 
+	/** Everyone who had a two-way conversation in [from, to): an input to Weekly Meaningful Actives. */
+	@Transactional(readOnly = true)
+	public Set<String> twoWayWriters(Instant from, Instant to) {
+		return new HashSet<>(messages.findTwoWayWriters(from, to));
+	}
+
 	/** {@code lastMessageAt} is null when nothing was written in the window. */
 	public record Rhythm(int mutualDays, Instant lastMessageAt) {
 	}

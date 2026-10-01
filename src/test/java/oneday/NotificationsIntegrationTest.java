@@ -157,6 +157,8 @@ class NotificationsIntegrationTest extends ApiTestSupport {
 			.andExpect(jsonPath("$[0].kind").value("WARNING"))
 			.andExpect(jsonPath("$[0].message", containsString("harassment")))
 			.andExpect(jsonPath("$[0].read").value(false)));
+		assertThat(push.sentTo(raviDevice)).isEmpty(); // queued in the outbox, sent after commit
+		deliverEvents();
 		assertThat(push.sentTo(raviDevice)).extracting(PushMessage::title)
 			.containsExactly("A message from OneDay Safety");
 		postAs(ravi, "/notices/" + JsonPath.read(warning, "$[0].id") + "/read", null).andExpect(status().isNoContent());

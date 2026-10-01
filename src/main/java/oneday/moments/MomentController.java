@@ -15,6 +15,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -41,6 +42,29 @@ public class MomentController {
 	@GetMapping("/{momentId}")
 	MomentView view(@AuthenticationPrincipal Jwt jwt, @PathVariable String momentId) {
 		return moments.view(jwt.getSubject(), momentId);
+	}
+
+	@PostMapping("/{momentId}/keep")
+	MomentView keep(@AuthenticationPrincipal Jwt jwt, @PathVariable String momentId) {
+		return moments.keep(jwt.getSubject(), momentId);
+	}
+
+	@DeleteMapping("/{momentId}/keep")
+	ResponseEntity<Void> unkeep(@AuthenticationPrincipal Jwt jwt, @PathVariable String momentId) {
+		moments.unkeep(jwt.getSubject(), momentId);
+		return ResponseEntity.noContent().build();
+	}
+
+	/** Your private Memory Trail (kept stories), newest first. */
+	@GetMapping("/trail")
+	List<MomentService.TrailItem> trail(@AuthenticationPrincipal Jwt jwt, @RequestParam(defaultValue = "0") int page) {
+		return moments.trail(jwt.getSubject(), page);
+	}
+
+	/** The Story Relay this moment belongs to (or started). */
+	@GetMapping("/{momentId}/relay")
+	MomentService.RelayView relay(@AuthenticationPrincipal Jwt jwt, @PathVariable String momentId) {
+		return moments.relay(jwt.getSubject(), momentId);
 	}
 
 	/** The Story Relay this moment belongs to (or started). */

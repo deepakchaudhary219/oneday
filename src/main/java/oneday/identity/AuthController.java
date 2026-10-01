@@ -1,5 +1,7 @@
 package oneday.identity;
 
+import oneday.attestation.AttestationGuard;
+
 import oneday.security.TokenService.IssuedToken;
 
 import jakarta.servlet.http.HttpServletRequest;
@@ -18,13 +20,17 @@ public class AuthController {
 
 	private final AuthService auth;
 
-	public AuthController(AuthService auth) {
+	private final AttestationGuard attestation;
+
+	public AuthController(AuthService auth, AttestationGuard attestation) {
 		this.auth = auth;
+		this.attestation = attestation;
 	}
 
 	@PostMapping("/register")
 	@ResponseStatus(HttpStatus.CREATED)
 	IssuedToken register(@Valid @RequestBody RegisterRequest request, HttpServletRequest http) {
+		attestation.check(http.getHeader(AttestationGuard.HEADER), "signup");
 		return auth.register(request, ClientInfo.of(http));
 	}
 

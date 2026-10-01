@@ -91,6 +91,11 @@
 			<groupId>org.flywaydb</groupId>
 			<artifactId>flyway-mysql</artifactId>
 		</dependency>
+		<!-- Optional event transport (oneday.events.transport=kafka): outbox -> Kafka -> consumer groups. -->
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-kafka</artifactId>
+		</dependency>
 		<!-- S3-compatible media storage (AWS S3 in ap-south-1, or MinIO). Only the lightweight JDK HTTP client. -->
 		<dependency>
 			<groupId>software.amazon.awssdk</groupId>
@@ -155,6 +160,11 @@
 		<dependency>
 			<groupId>com.h2database</groupId>
 			<artifactId>h2</artifactId>
+			<scope>test</scope>
+		</dependency>
+		<dependency>
+			<groupId>org.springframework.boot</groupId>
+			<artifactId>spring-boot-starter-kafka-test</artifactId>
 			<scope>test</scope>
 		</dependency>
 <!--		<dependency>-->

@@ -1,8 +1,10 @@
 package oneday.prompts;
 
+import oneday.platform.ReplicaReads;
 import java.time.LocalDate;
 import java.util.List;
 
+import oneday.prompts.PromptService.FestivalView;
 import oneday.prompts.PromptService.ScheduledView;
 import oneday.prompts.PromptService.TodayView;
 
@@ -12,9 +14,12 @@ import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Size;
 
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -32,7 +37,7 @@ public class PromptController {
 	/** Today's Prompt. Answer it by posting a moment with {@code promptKey}. */
 	@GetMapping("/prompts/today")
 	TodayView today(@AuthenticationPrincipal Jwt jwt) {
-		return prompts.today(jwt.getSubject());
+		return ReplicaReads.run(() -> prompts.today(jwt.getSubject()));
 	}
 
 	@PostMapping("/staff/prompts")
@@ -45,6 +50,29 @@ public class PromptController {
 	@GetMapping("/staff/prompts")
 	List<ScheduledView> upcoming(@AuthenticationPrincipal Jwt jwt) {
 		return prompts.upcoming(jwt.getSubject());
+	}
+
+	@PostMapping("/staff/festivals")
+	@ResponseStatus(HttpStatus.CREATED)
+	FestivalView addFestival(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody FestivalRequest request) {
+		return prompts.addFestival(jwt.getSubject(), request.name(), request.homeRegion(), request.startsOn(),
+				request.endsOn(), request.promptText(), request.activityHint());
+	}
+
+	@GetMapping("/staff/festivals")
+	List<FestivalView> festivals(@AuthenticationPrincipal Jwt jwt) {
+		return prompts.festivals(jwt.getSubject());
+	}
+
+	@DeleteMapping("/staff/festivals/{id}")
+	ResponseEntity<Void> removeFestival(@AuthenticationPrincipal Jwt jwt, @PathVariable String id) {
+		prompts.removeFestival(jwt.getSubject(), id);
+		return ResponseEntity.noContent().build();
+	}
+
+	public record FestivalRequest(@NotBlank @Size(max = 60) String name, @Size(max = 8) String homeRegion,
+			@NotNull LocalDate startsOn, @NotNull LocalDate endsOn, @NotBlank @Size(max = 140) String promptText,
+			@Size(max = 30) String activityHint) {
 	}
 
 	public record ScheduleRequest(@NotNull LocalDate date, @Size(max = 8) String homeRegion,

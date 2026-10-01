@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Optional;
 
 import javax.crypto.Mac;
@@ -20,6 +21,7 @@ import oneday.config.OneDayProperties;
 import oneday.security.TokenService.IssuedToken;
 import oneday.sms.PhoneNumbers;
 import oneday.sms.SmsSender;
+import oneday.sms.SmsTemplate;
 
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -82,8 +84,9 @@ public class OtpService {
 		Instant now = clock.instant();
 		OtpChallenge challenge = challenges
 			.save(new OtpChallenge(phoneHash, hmac("code|" + phone + "|" + code), now, now.plus(settings.ttl())));
-		sender.send(phone, "Your OneDay code is " + code + ". It expires in " + settings.ttl().toMinutes()
-				+ " minutes. Never share it with anyone.");
+		String minutes = String.valueOf(settings.ttl().toMinutes());
+		sender.send(phone, SmsTemplate.OTP, Map.of("code", code, "minutes", minutes),
+				"Your OneDay code is " + code + ". It expires in " + minutes + " minutes. Never share it with anyone.");
 		return new ChallengeView(challenge.getId(), challenge.getExpiresAt());
 	}
 

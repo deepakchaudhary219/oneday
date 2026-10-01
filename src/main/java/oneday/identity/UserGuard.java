@@ -50,6 +50,10 @@ public class UserGuard {
 
 	public User requireContactAllowed(String userId) {
 		User user = requireActive(userId);
+		if (user.getVerificationStatus() == VerificationStatus.EXPIRED) {
+			throw ApiException.forbidden("REVERIFICATION_REQUIRED",
+					"It's been a while. A quick liveness re-check keeps everyone here real.");
+		}
 		if (!user.isVerified()) {
 			throw ApiException.forbidden("VERIFICATION_REQUIRED",
 					"Complete a quick liveness check before reaching other people");

@@ -12,6 +12,7 @@ A story-first, hyperlocal social network where friendship **and dating** can hap
 | [`docs/02-product-blueprint-v2.md`](docs/02-product-blueprint-v2.md) | Consolidated product spec: Dating Lens + Mutual Spark, the "Roots & Radius" map, Real Values, India-first requirements, release scope |
 | [`docs/03-technical-architecture-v2.md`](docs/03-technical-architecture-v2.md) | Modular-monolith architecture, API surface, **location-privacy engineering**, data model, DPDP/IT Rules compliance |
 | [`docs/04-implementation-plan.md`](docs/04-implementation-plan.md) | Milestones M0–M6, team, density gates, what each milestone delivered |
+| [`docs/06-system-design.md`](docs/06-system-design.md) | System design for scale: request path, outbox and Kafka, consistency choices, hot spots, extraction order |
 | [`docs/05-engagement-psychology.md`](docs/05-engagement-psychology.md) | Why people come back: the psychology behind every engagement feature, the dark patterns we refuse, and how we measure it |
 
 These docs extend the original *Product & Psychology Blueprint* and *Technical Architecture & System Design Specification*.
@@ -45,6 +46,25 @@ Spring Boot 4.1 modular monolith. One package per service in the v1 catalog: `id
 - **Story Relays**: answer a stranger's public story with your own (`replyToMomentId`, `GET /moments/{id}/relay`).
 - **Connection Warmth** instead of streaks: no countdown and no loss; conversation starters from shared context.
 - **Global from day one**: a country on the profile drives the emergency number on every safety surface.
+- **Festival Seasons**: Onam, Durga Puja, Eid and others drive the region's daily prompt and label the map.
+- **Weekly Recap** (`GET /ledger/week`): last week as one highlight, a few facts and a kind ending.
+- **Right Now** (off until density Gate 2; `ONEDAY_RIGHT_NOW=true`): "up for badminton for the next hour", with a consent-only connection.
+- **Honest measurement**: Weekly Meaningful Actives (`GET /staff/metrics/engagement`) and a rare "was your time well spent?" check.
+- **Re-verification every 90 days**, and expired stories deleted 14 days after expiry, so no location history builds up.
+
+**Community features:**
+- **Plans & Rooms** (`/plans`): 3–12-person meet-ups held only at Safety-Verified Meeting Points, with optional Roots-only visibility. Joining needs the host's approval (declines are silent), and members share a temporary Room.
+- **Trusted Vouch** (`POST /connections/{id}/vouch`): someone who has really talked with you vouches for you. Strangers see only "vouched by N".
+- **Memory Trail** (`POST /moments/{id}/keep`, `GET /moments/trail`): keep your own stories privately past 24 h, with only their ~5 km area.
+
+**Scale and platform** (see [`docs/06-system-design.md`](docs/06-system-design.md)):
+- Pushes and texts are sent after commit through the outbox, never inside a request.
+- `Idempotency-Key` makes POST retries safe.
+- Optional read replica for heavy reads.
+- Cached session checks with Redis pub/sub invalidation.
+- The Local Pulse is indexed by time zone and hour.
+- Optional **Kafka** transport (`SPRING_PROFILES_ACTIVE=...,kafka`).
+- **Vendor adapters:** FCM push, MSG91 DLT SMS, and Play Integrity device attestation.
 
 **Milestone 4 (dating-ready v1.5) so far:**
 - **Date Mode:** plans between Connections, exact location that is time-boxed and needs both people's consent, a trusted contact with a private live link, "Going OK?" check-ins that escalate, one-tap SOS (112), "home safe" end-of-date confirmation, and a Trust & Safety alert desk.
@@ -88,6 +108,12 @@ Any other deployment **must** set:
 | `ONEDAY_GRIEVANCE_OFFICER_NAME` / `_EMAIL` / `_ADDRESS` | The Grievance Officer's published contact (IT Rules 3(2), DPDP), served at `GET /grievances/officer`. Required before launch. |
 | `MANAGEMENT_SERVER_PORT` | An internal-only port (e.g. `8081`) for health probes and Prometheus scraping (`/actuator/prometheus`, token-free only there). Without it, metrics need an admin token. |
 | `ONEDAY_PUBLIC_URL` | Public HTTPS base of the API, used in the private link texted to a Date Mode trusted contact (`/date-share/…`) |
+| `ONEDAY_PUSH_PROVIDER=fcm` + `oneday.google.credentials-file` | FCM HTTP v1 push (Android, and iOS via APNs) with a Google service-account key |
+| `ONEDAY_SMS_PROVIDER=msg91` + `ONEDAY_MSG91_AUTH_KEY`, `ONEDAY_MSG91_TEMPLATE_OTP` / `_TRUSTED_CONTACT` / `_SAFETY_ALERT` | DLT-compliant SMS via MSG91 templates |
+| `ONEDAY_ATTESTATION_MODE` (`off` / `monitor` / `enforce`) + `ONEDAY_ATTESTATION_PROVIDER=play-integrity` + `ONEDAY_ANDROID_PACKAGE` | Device attestation on signup, phone sign-in and location updates (header `X-Device-Integrity`) |
+| `ONEDAY_EVENTS_TRANSPORT=kafka` / profile `kafka` + `KAFKA_BOOTSTRAP_SERVERS` | Kafka event transport instead of in-process delivery |
+| `oneday.datasource.replica.jdbc-url` / `.username` / `.password` | Optional MySQL read replica for opt-in heavy reads |
+| `ONEDAY_RIGHT_NOW` | `true` turns on Right Now. Leave it off until a city meets density Gate 2 (`docs/04` §5). |
 | `ONEDAY_API_DOCS` | `true` publishes `/v3/api-docs` and Swagger UI. Off by default outside the `dev` profile. |
 | `ONEDAY_BOOTSTRAP_ADMIN_IDS` | Comma-separated **user ids** that act as the first Trust & Safety admins. Take the id from the `sub` of your own token. Ids, not emails: emails aren't ownership-verified yet. |
 

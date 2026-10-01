@@ -248,9 +248,10 @@ Prompts must be easy (one photo of something in front of you), present-tense, po
 
 ## 6. Next engagement features (backlog, in order)
 
-1. **Festival Seasons:** a Roots calendar that schedules regional prompts automatically (Onam, Durga Puja, Pongal, Bihu, Diwali, Eid, Christmas, Lunar New Year for global diasporas) and lights up Roots clusters.
-2. **Right Now** (blueprint v2 §6.1, behind density Gate 2): opt in to a named activity for 1–2 h. It shows on the map as a band-level node, and joining needs a mutual reveal.
-3. **Plans & Rooms:** turn a relay or a busy cluster into a small public meet-up at a Meeting Point.
-4. **Memory Trail** (private): your own past moments and the relays you joined, on your own map only (peak-end for the self).
-5. **Weekly Recap:** the Ledger as a short, warm weekly story.
-6. **Trusted Vouch:** friends vouch for you, which transfers trust.
+1. ✅ **Festival Seasons:** dated windows per home region (Onam, Durga Puja, Pongal, Bihu, Diwali, Eid, Christmas, Lunar New Year for global diasporas). They drive the day's prompt for that region and label Story Map clusters ("Onam"). Staff enter the dates each year, because lunar dates move.
+2. ✅ **Right Now** (blueprint v2 §6.1, behind a flag until density Gate 2): opt in to a named activity for 30–120 min. It shows at band precision. "I'm up for it too" is limited to 5 a day with no free text, and only the poster's acceptance connects; a decline is silent.
+3. ✅ **Weekly Recap** (`GET /ledger/week`): built on the peak-end rule. One highlight, a few facts, a kind ending; on Mondays the Local Pulse says it is ready.
+4. ✅ **Wellbeing guardrail and WMA** (§5): the one-tap question and the admin dashboard are live.
+5. **Plans & Rooms:** turn a relay or a busy cluster into a small public meet-up at a Meeting Point.
+6. **Memory Trail** (private): your own past moments and the relays you joined, on your own map only. It needs an opt-in to keep media beyond the 14-day retention.
+7. **Trusted Vouch:** friends vouch for you, which transfers trust.

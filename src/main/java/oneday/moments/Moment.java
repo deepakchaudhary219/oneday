@@ -56,6 +56,13 @@ public class Moment {
 
 	private String replyToId;
 
+	/** Kept in the owner's private Memory Trail. */
+	@Column(nullable = false)
+	private boolean kept;
+
+	/** The Memory Trail copy of the media (outside the expiring moments/ prefix). */
+	private String trailMediaRef;
+
 	/** Position in its relay (the root is 0). */
 	@Column(nullable = false)
 	private int relayDepth;
@@ -98,6 +105,43 @@ public class Moment {
 		this.replyToId = replyTo.getId();
 		this.relayRootId = replyTo.relayRootId != null ? replyTo.relayRootId : replyTo.getId();
 		this.relayDepth = replyTo.relayDepth + 1;
+	}
+
+	void keep() {
+		kept = true;
+	}
+
+	/** Returns the trail copy to delete, if any. */
+	String unkeep() {
+		kept = false;
+		String ref = trailMediaRef;
+		trailMediaRef = null;
+		return ref;
+	}
+
+	void setTrailMediaRef(String ref) {
+		trailMediaRef = ref;
+	}
+
+	/** After the retention period a kept story keeps only its ~5 km area: no precise location history. */
+	void coarsenForTrail() {
+		if (cell != null && cell.length() > 5) {
+			cell = cell.substring(0, 5);
+		}
+		cellLat = null;
+		cellLon = null;
+	}
+
+	public Double getCellLat() {
+		return cellLat;
+	}
+
+	public boolean isKept() {
+		return kept;
+	}
+
+	public String getTrailMediaRef() {
+		return trailMediaRef;
 	}
 
 	public String getPromptKey() {

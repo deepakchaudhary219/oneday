@@ -49,6 +49,8 @@ public class PromptService {
 
 	private final DailyPromptRepository scheduled;
 
+	private final FestivalSeasonRepository festivals;
+
 	private final MomentService moments;
 
 	private final LocationService locations;
@@ -69,11 +71,13 @@ public class PromptService {
 
 	private final Clock clock;
 
-	public PromptService(PromptCatalog catalog, DailyPromptRepository scheduled, MomentService moments,
+	public PromptService(PromptCatalog catalog, DailyPromptRepository scheduled, FestivalSeasonRepository festivals,
+			MomentService moments,
 			LocationService locations, ProfileService profiles, ConnectionService connections, BlockChecker blocks,
 			UserGuard guard, StaffDirectory staff, StaffAudit audit, OneDayProperties properties, Clock clock) {
 		this.catalog = catalog;
 		this.scheduled = scheduled;
+		this.festivals = festivals;
 		this.moments = moments;
 		this.locations = locations;
 		this.profiles = profiles;
@@ -95,8 +99,8 @@ public class PromptService {
 		boolean unlocked = mine.stream().anyMatch(m -> m.getShareScope() == ShareScope.PUBLIC_DISCOVERY);
 		Optional<GeoCell> here = locations.currentCell(userId);
 		if (here.isEmpty()) {
-			return new TodayView(prompt.key(), prompt.text(), prompt.activityHint(), prompt.roots(), answered, unlocked,
-					"0", 0, List.of(), "Share your location to see how people near you answered.");
+			return new TodayView(prompt.key(), prompt.text(), prompt.activityHint(), prompt.roots(), prompt.festival(),
+					answered, unlocked, "0", 0, List.of(), "Share your location to see how people near you answered.");
 		}
 		Profile me = profiles.require(userId);
 		List<Answer> answers = answersNear(userId, me, here.get(), prompt.key());
@@ -115,8 +119,8 @@ public class PromptService {
 					+ (fromHome > 0 ? " (" + fromHome + " from your home region)" : "")
 					+ ". Share yours publicly to see theirs.";
 		}
-		return new TodayView(prompt.key(), prompt.text(), prompt.activityHint(), prompt.roots(), answered, unlocked,
-				count, (int) Math.min(fromHome, 9), unlocked ? answers.stream().limit(MAX_ANSWERS).toList() : List.of(),
+		return new TodayView(prompt.key(), prompt.text(), prompt.activityHint(), prompt.roots(), prompt.festival(),
+				answered, unlocked, count, (int) Math.min(fromHome, 9), unlocked ? answers.stream().limit(MAX_ANSWERS).toList() : List.of(),
 				message);
 	}
 
@@ -160,10 +164,7 @@ public class PromptService {
 		if (date.isBefore(LocalDate.now(clock).minusDays(1))) {
 			throw ApiException.unprocessable("DATE_PASSED", "Pick today or a future date");
 		}
-		String region = homeRegion == null || homeRegion.isBlank() ? null : homeRegion.trim().toUpperCase();
-		if (region != null && !region.matches("[A-Z]{2}-[A-Z0-9]{1,3}")) {
-			throw ApiException.badRequest("INVALID_REGION", "Use a region code such as IN-KL");
-		}
+		String region = normalizeRegion(homeRegion);
 		DailyPrompt prompt = scheduled.save(new DailyPrompt(date, region, text.strip(),
 				ActivityTags.normalize(activityHint), staffId, clock.instant()));
 		audit.record(staffId, "PROMPT_SCHEDULED", "PROMPT", prompt.getId(), date + " " + (region == null ? "all" : region));
@@ -179,6 +180,56 @@ public class PromptService {
 			.toList();
 	}
 
+	/** Adds a festival season: for one home region (a Roots festival) or, without one, for everyone. */
+	@Transactional
+	public FestivalView addFestival(String staffId, String name, String homeRegion, LocalDate startsOn,
+			LocalDate endsOn, String promptText, String activityHint) {
+		staff.require(staffId, StaffRole.MODERATOR);
+		if (endsOn.isBefore(startsOn) || startsOn.plusDays(30).isBefore(endsOn)) {
+			throw ApiException.unprocessable("INVALID_SEASON", "A season runs from 1 to 31 days");
+		}
+		String region = normalizeRegion(homeRegion);
+		FestivalSeason season = festivals.save(new FestivalSeason(name.strip(), region, startsOn, endsOn,
+				promptText.strip(), ActivityTags.normalize(activityHint), staffId, clock.instant()));
+		audit.record(staffId, "FESTIVAL_ADDED", "FESTIVAL", season.getId(),
+				name + " " + startsOn + ".." + endsOn + " " + (region == null ? "all" : region));
+		return FestivalView.of(season);
+	}
+
+	@Transactional(readOnly = true)
+	public List<FestivalView> festivals(String staffId) {
+		staff.require(staffId, StaffRole.MODERATOR);
+		return festivals.findByEndsOnGreaterThanEqualOrderByStartsOnAsc(LocalDate.now(clock).minusDays(1))
+			.stream()
+			.map(FestivalView::of)
+			.toList();
+	}
+
+	@Transactional
+	public void removeFestival(String staffId, String id) {
+		staff.require(staffId, StaffRole.MODERATOR);
+		FestivalSeason season = festivals.findById(id).orElseThrow(() -> ApiException.notFound("Festival"));
+		festivals.delete(season);
+		audit.record(staffId, "FESTIVAL_REMOVED", "FESTIVAL", id, season.getName());
+	}
+
+	private static String normalizeRegion(String homeRegion) {
+		String region = homeRegion == null || homeRegion.isBlank() ? null : homeRegion.trim().toUpperCase();
+		if (region != null && !region.matches("[A-Z]{2}-[A-Z0-9]{1,3}")) {
+			throw ApiException.badRequest("INVALID_REGION", "Use a region code such as IN-KL");
+		}
+		return region;
+	}
+
+	public record FestivalView(String id, String name, String homeRegion, LocalDate startsOn, LocalDate endsOn,
+			String promptText, String activityHint) {
+
+		static FestivalView of(FestivalSeason f) {
+			return new FestivalView(f.getId(), f.getName(), f.getHomeRegion(), f.getStartsOn(), f.getEndsOn(),
+					f.getPromptText(), f.getActivityHint());
+		}
+	}
+
 	private record Ranked(Answer answer, int rank) {
 	}
 
@@ -186,7 +237,7 @@ public class PromptService {
 	 * @param count capped at "9+": enough to feel the room, never a scoreboard
 	 * @param answers empty until the viewer has shared a public answer
 	 */
-	public record TodayView(String promptKey, String text, String activityHint, boolean rootsPrompt,
+	public record TodayView(String promptKey, String text, String activityHint, boolean rootsPrompt, String festival,
 			boolean answeredByYou, boolean unlocked, String answeredNearby, int fromYourHomeRegion,
 			List<Answer> answers, String message) {
 	}

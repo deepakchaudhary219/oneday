@@ -1,5 +1,7 @@
 package oneday.geo;
 
+import oneday.attestation.AttestationGuard;
+
 import oneday.geo.LocationService.LocationView;
 
 import jakarta.validation.Valid;
@@ -14,6 +16,7 @@ import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -24,8 +27,11 @@ public class LocationController {
 
 	private final LocationService locations;
 
-	public LocationController(LocationService locations) {
+	private final AttestationGuard attestation;
+
+	public LocationController(LocationService locations, AttestationGuard attestation) {
 		this.locations = locations;
+		this.attestation = attestation;
 	}
 
 	@GetMapping
@@ -35,7 +41,9 @@ public class LocationController {
 
 	/** Foreground ping. Raw coordinates are snapped to a cell immediately and never stored or logged. */
 	@PutMapping
-	LocationView update(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody LocationUpdate update) {
+	LocationView update(@AuthenticationPrincipal Jwt jwt, @Valid @RequestBody LocationUpdate update,
+			@RequestHeader(name = AttestationGuard.HEADER, required = false) String integrity) {
+		attestation.check(integrity, "location");
 		return locations.update(jwt.getSubject(), update.lat(), update.lon());
 	}
 

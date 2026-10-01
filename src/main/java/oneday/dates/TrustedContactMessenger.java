@@ -1,6 +1,9 @@
 package oneday.dates;
 
+import java.util.Map;
+
 import oneday.sms.SmsSender;
+import oneday.sms.SmsTemplate;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -23,13 +26,13 @@ class TrustedContactMessenger {
 	}
 
 	/** Returns whether the text was handed to a provider. */
-	boolean text(String e164Phone, String message) {
+	boolean text(String e164Phone, SmsTemplate template, Map<String, String> variables, String message) {
 		SmsSender sms = sender.getIfAvailable();
 		if (sms == null) {
 			return false;
 		}
 		try {
-			sms.send(e164Phone, message);
+			sms.send(e164Phone, template, variables, message);
 			return true;
 		}
 		catch (RuntimeException ex) {
@@ -39,10 +42,10 @@ class TrustedContactMessenger {
 	}
 
 	/** Like {@link #text} but failures propagate, so an outbox consumer retries them. */
-	void textOrThrow(String e164Phone, String message) {
+	void textOrThrow(String e164Phone, SmsTemplate template, Map<String, String> variables, String message) {
 		SmsSender sms = sender.getIfAvailable();
 		if (sms != null) {
-			sms.send(e164Phone, message);
+			sms.send(e164Phone, template, variables, message);
 		}
 	}
 }

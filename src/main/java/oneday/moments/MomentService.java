@@ -9,6 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import oneday.common.ApiException;
@@ -18,6 +19,7 @@ import oneday.connections.ConnectionService;
 import oneday.events.DomainEvent;
 import oneday.events.EventPublisher;
 import oneday.geo.GeoCell;
+import oneday.geo.Geohash;
 import oneday.geo.GeoMath;
 import oneday.geo.LocationService;
 import oneday.identity.UserGuard;
@@ -136,6 +138,10 @@ public class MomentService {
 		metrics.momentPublished(moment.getKind());
 		events.publish(new DomainEvent.MomentPublished(moment.getId(), userId, moment.getKind().name(),
 				moment.getShareScope().name()));
+		if (replyTo != null) {
+			events.publish(new DomainEvent.RelayJoined(moment.getId(), moment.getRelayRootId(), userId,
+					replyTo.getOwnerId()));
+		}
 		return full(moment, profiles.require(userId).firstName());
 	}
 
@@ -266,9 +272,105 @@ public class MomentService {
 		return moments.findByOwnerIdOrderByCreatedAtDesc(userId);
 	}
 
+	/**
+	 * Retention: a story lasts a day, and its row (with the capture cell) is deleted once it has been expired
+	 * for a while, so no location history builds up. Owners for whom {@code held} is true (a safety hold)
+	 * keep theirs as evidence. Returns how many were deleted.
+	 */
+	@Transactional
+	public int purgeExpired(Instant expiredBefore, Predicate<String> held) {
+		// Kept stories stay in their owner's Memory Trail, but only with their ~5 km area from now on.
+		moments.findByExpiresAtBeforeAndKeptTrueAndCellLatIsNotNull(expiredBefore, PageRequest.of(0, 1000))
+			.forEach(Moment::coarsenForTrail);
+		List<Moment> stale = moments.findByExpiresAtBeforeAndKeptFalse(expiredBefore, PageRequest.of(0, 1000));
+		Map<String, Boolean> holds = new HashMap<>();
+		int purged = 0;
+		for (Moment m : stale) {
+			if (!holds.computeIfAbsent(m.getOwnerId(), held::test)) {
+				moments.delete(m);
+				media.discard(m.getMediaRef());
+				purged++;
+			}
+		}
+		return purged;
+	}
+
+	/** Answers the given relay roots ever received (live or expired), for the private recap. */
+	@Transactional(readOnly = true)
+	public long relayAnswersEver(Collection<String> rootIds) {
+		return rootIds.isEmpty() ? 0 : moments.countAllRelayAnswers(rootIds);
+	}
+
+	/** The person's own moments created in [from, to), live or expired (for their private recap). */
+	@Transactional(readOnly = true)
+	public List<Moment> createdBy(String userId, Instant from, Instant to) {
+		return moments.findByOwnerIdAndCreatedAtGreaterThanEqualAndCreatedAtLessThan(userId, from, to);
+	}
+
 	@Transactional
 	public void deleteAllBy(String userId) {
+		moments.findByOwnerIdAndKeptTrue(userId).forEach(m -> media.discardObject(m.getTrailMediaRef()));
 		moments.deleteByOwner(userId);
+	}
+
+	// ---- Memory Trail (private) -----------------------------------------------------------------------
+
+	/** Keeps one of your own stories in your private Memory Trail (before it is purged). */
+	@Transactional
+	public MomentView keep(String userId, String momentId) {
+		Moment moment = moments.findById(momentId)
+			.filter(m -> m.getOwnerId().equals(userId))
+			.orElseThrow(() -> ApiException.notFound("Moment"));
+		if (!moment.isKept()) {
+			moment.keep();
+			if (moment.getMediaRef() != null) {
+				events.publish(new DomainEvent.MomentKept(moment.getId(), userId));
+			}
+		}
+		return full(moment, profiles.require(userId).firstName());
+	}
+
+	@Transactional
+	public void unkeep(String userId, String momentId) {
+		Moment moment = moments.findById(momentId)
+			.filter(m -> m.getOwnerId().equals(userId))
+			.orElseThrow(() -> ApiException.notFound("Moment"));
+		media.discardObject(moment.unkeep());
+		if (!moment.isLive(clock.instant()) && moment.getCellLat() == null) {
+			moments.delete(moment); // already past retention: un-keeping lets it go now
+			media.discard(moment.getMediaRef());
+		}
+	}
+
+	/** Outbox consumer: copies a kept story's media into the trail prefix (idempotent). */
+	@Transactional
+	public void copyKeptMedia(String momentId) {
+		moments.findById(momentId)
+			.filter(m -> m.isKept() && m.getTrailMediaRef() == null && m.getMediaRef() != null)
+			.ifPresent(m -> m.setTrailMediaRef(media.copyToTrail(m.getMediaRef(), m.getKind() == MomentKind.VIDEO)));
+	}
+
+	/** Your Memory Trail, newest first: only ever shown to you, with the ~5 km area at most. */
+	@Transactional(readOnly = true)
+	public List<TrailItem> trail(String userId, int page) {
+		guard.requireExisting(userId);
+		return moments.findByOwnerIdAndKeptTrueOrderByCreatedAtDesc(userId, PageRequest.of(Math.max(page, 0), 30))
+			.stream()
+			.map(m -> {
+				String area = m.getCell() == null ? null : m.getCell().substring(0, Math.min(5, m.getCell().length()));
+				double[] center = area == null ? null : Geohash.center(area);
+				String mediaKey = m.getTrailMediaRef() != null ? m.getTrailMediaRef()
+						: m.isLive(clock.instant()) ? m.getMediaRef() : null;
+				return new TrailItem(m.getId(), m.getKind(), m.getCaption(), m.getActivityTag(), media.viewUrl(mediaKey),
+						center == null ? null : center[0], center == null ? null : center[1], m.getPromptKey() != null,
+						m.getRelayRootId() != null, m.getCreatedAt());
+			})
+			.toList();
+	}
+
+	/** A kept story. {@code areaLat}/{@code areaLon} are the ~5 km area's centre, for the owner's own map. */
+	public record TrailItem(String momentId, MomentKind kind, String caption, String activity, String mediaUrl,
+			Double areaLat, Double areaLon, boolean answeredPrompt, boolean partOfRelay, Instant capturedAt) {
 	}
 
 	/** Short-lived URL of the Layer-0 preview, if this moment has one. */
