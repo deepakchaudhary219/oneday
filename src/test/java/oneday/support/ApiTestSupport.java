@@ -47,7 +47,7 @@ public abstract class ApiTestSupport {
 
 	protected static final double BLR_LON = 77.6245;
 
-	private static final List<String> TABLES = List.of("time_capsules", "calls", "e2ee_envelopes", "e2ee_one_time_prekeys", "e2ee_devices", "app_attest_keys", "attestation_challenges", "pulse_statuses", "consent_records", "payment_webhook_events", "subscriptions", "vouches", "plan_messages", "plan_members", "plans", "idempotency_keys", "right_now_joins", "right_now_sessions", "festival_seasons", "weekly_actives", "wellbeing_answers", "daily_prompts", "processed_events", "outbox_events", "ledger_entries", "date_participants", "date_plans",
+	private static final List<String> TABLES = List.of("thread_posts", "thread_members", "threads", "time_capsules", "calls", "e2ee_envelopes", "e2ee_one_time_prekeys", "e2ee_devices", "app_attest_keys", "attestation_challenges", "pulse_statuses", "consent_records", "payment_webhook_events", "subscriptions", "vouches", "plan_messages", "plan_members", "plans", "idempotency_keys", "right_now_joins", "right_now_sessions", "festival_seasons", "weekly_actives", "wellbeing_answers", "daily_prompts", "processed_events", "outbox_events", "ledger_entries", "date_participants", "date_plans",
 			"meeting_points", "grievances", "sessions", "notices", "pulse_deliveries", "devices", "staff_actions", "staff_members", "messages", "conversations", "connections", "signals",
 			"moments", "media_uploads", "user_locations", "blocks", "reports", "verification_attempts", "otp_challenges", "profiles", "users");
 

@@ -34,6 +34,7 @@ import oneday.rightnow.RightNowService;
 import oneday.safety.SafetyService;
 import oneday.security.SessionService;
 import oneday.signals.SignalService;
+import oneday.threads.ThreadService;
 import oneday.staff.StaffDirectory;
 import oneday.trust.VouchService;
 import oneday.verification.VerificationService;
@@ -115,6 +116,8 @@ public class PrivacyService {
 
 	private final TimeCapsuleService capsules;
 
+	private final ThreadService threads;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
@@ -123,7 +126,8 @@ public class PrivacyService {
 			WellbeingService wellbeing, RightNowService rightNow, IdempotencyStore idempotency, PlanService plans,
 			VouchService vouches, PlusService plus, ConsentService consents,
 			PulseStatusService pulseStatuses, E2eeService e2ee,
-			CallService calls, TimeCapsuleService capsules, Clock clock,
+			CallService calls, TimeCapsuleService capsules,
+			ThreadService threads, Clock clock,
 			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
 		this.rightNow = rightNow;
 		this.idempotency = idempotency;
@@ -135,6 +139,7 @@ public class PrivacyService {
 		this.e2ee = e2ee;
 		this.calls = calls;
 		this.capsules = capsules;
+		this.threads = threads;
 		this.clock = clock;
 		this.momentRetention = momentRetention;
 		this.wellbeing = wellbeing;
@@ -232,6 +237,7 @@ public class PrivacyService {
 		data.put("secureChatDevices", e2ee.export(userId));
 		data.put("calls", calls.export(userId)); // call metadata only: media is never recorded
 		data.put("timeCapsules", capsules.export(userId));
+		data.put("threadPosts", threads.export(userId));
 		return data;
 	}
 
@@ -307,6 +313,7 @@ public class PrivacyService {
 		e2ee.forget(userId);
 		calls.forget(userId);
 		capsules.forget(userId);
+		threads.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
