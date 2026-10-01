@@ -152,6 +152,18 @@ public class LocationService {
 	}
 
 	/** The owner's own view: their current cell id (~0.7 km²), never anyone else's. */
+	/** How many people currently share a location within {@code radiusKm} of a point (city density, staff only). */
+	@Transactional(readOnly = true)
+	public long countSharingWithin(double lat, double lon, double radiusKm) {
+		double dLat = radiusKm / 111.0;
+		double dLon = radiusKm / (111.0 * Math.max(Math.cos(Math.toRadians(lat)), 0.01));
+		GeoCell center = new GeoCell("", lat, lon);
+		return locations.cellsInBox(lat - dLat, lat + dLat, lon - dLon, lon + dLon)
+			.stream()
+			.filter(row -> center.distanceKm(new GeoCell("", (Double) row[0], (Double) row[1])) <= radiusKm)
+			.count();
+	}
+
 	public record LocationView(String area, boolean sharing, boolean insideSafeZone, Instant updatedAt) {
 	}
 }

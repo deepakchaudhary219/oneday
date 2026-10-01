@@ -13,6 +13,8 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import oneday.chat.ChatService;
+import oneday.cities.CityFeature;
+import oneday.cities.CityGates;
 import oneday.chat.Conversation;
 import oneday.common.ApiException;
 import oneday.connections.Connection;
@@ -86,10 +88,14 @@ public class RightNowService {
 
 	private final Entitlements entitlements;
 
+	private final CityGates cities;
+
 	public RightNowService(RightNowSessionRepository sessions, RightNowJoinRepository joins,
 			RightNowProperties settings, LocationService locations, LocationPrivacy privacy, ProfileService profiles,
 			ConnectionService connections, ChatService chat, BlockChecker blocks, UserGuard guard,
-			NotificationService notifications, EventPublisher events, Clock clock, Entitlements entitlements) {
+			NotificationService notifications, EventPublisher events, Clock clock, Entitlements entitlements,
+			CityGates cities) {
+		this.cities = cities;
 		this.entitlements = entitlements;
 		this.sessions = sessions;
 		this.joins = joins;
@@ -108,7 +114,7 @@ public class RightNowService {
 
 	@Transactional
 	public MySessionView start(String userId, String rawActivity, int minutes) {
-		requireEnabled();
+		requireEnabled(userId);
 		guard.requireContactAllowed(userId);
 		locations.requireCurrentCell(userId);
 		String activity = ActivityTags.normalize(rawActivity);
@@ -132,14 +138,14 @@ public class RightNowService {
 
 	@Transactional(readOnly = true)
 	public Optional<MySessionView> current(String userId) {
-		requireEnabled();
+		requireEnabled(userId);
 		return sessions.findActiveFor(userId, clock.instant()).map(s -> mine(userId, s));
 	}
 
 	/** People nearby who are up for something now, best shared context first. Bounded; band precision. */
 	@Transactional(readOnly = true)
 	public List<NearbyView> nearby(String viewerId, String activityFilter) {
-		requireEnabled();
+		requireEnabled(viewerId);
 		guard.requireActive(viewerId);
 		Instant now = clock.instant();
 		if (!connections.inCouple(List.of(viewerId)).isEmpty()) {
@@ -184,7 +190,7 @@ public class RightNowService {
 	/** "I'm up for it too." One per session, a small daily budget, no free text. */
 	@Transactional
 	public JoinView join(String userId, String sessionId) {
-		requireEnabled();
+		requireEnabled(userId);
 		guard.requireContactAllowed(userId);
 		Instant now = clock.instant();
 		RightNowSession session = sessions.findById(sessionId)
@@ -207,7 +213,7 @@ public class RightNowService {
 	/** Pending "up for it too" requests on the caller's own active session. */
 	@Transactional(readOnly = true)
 	public List<RequestView> requests(String userId) {
-		requireEnabled();
+		requireEnabled(userId);
 		Instant now = clock.instant();
 		Optional<RightNowSession> session = sessions.findActiveFor(userId, now);
 		if (session.isEmpty()) {
@@ -230,7 +236,7 @@ public class RightNowService {
 	/** Accepting creates the Connection and a Conversation seeded with the activity. */
 	@Transactional
 	public AcceptView accept(String userId, String joinId) {
-		requireEnabled();
+		requireEnabled(userId);
 		guard.requireContactAllowed(userId);
 		RightNowJoin join = pendingJoinFor(userId, joinId);
 		RightNowSession session = sessions.findById(join.getSessionId()).orElseThrow();
@@ -248,7 +254,7 @@ public class RightNowService {
 	/** Silent: the joiner is never told. */
 	@Transactional
 	public void decline(String userId, String joinId) {
-		requireEnabled();
+		requireEnabled(userId);
 		pendingJoinFor(userId, joinId).resolve(RightNowJoin.Status.DECLINED);
 	}
 
@@ -298,8 +304,9 @@ public class RightNowService {
 		return minutes >= 75 ? "for a while yet" : minutes >= 40 ? "for about an hour" : "for a little longer";
 	}
 
-	private void requireEnabled() {
-		if (!settings.enabled()) {
+	/** On everywhere once Gate 2 passes globally, or per city as each city reaches density (multi-city). */
+	private void requireEnabled(String userId) {
+		if (!settings.enabled() && !cities.isEnabled(userId, CityFeature.RIGHT_NOW)) {
 			throw ApiException.notFound("Right Now");
 		}
 	}
