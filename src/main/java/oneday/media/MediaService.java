@@ -1,5 +1,9 @@
 package oneday.media;
 
+import java.io.IOException;
+import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -153,6 +157,41 @@ public class MediaService {
 			});
 			deleteAfterCommit(keys);
 		}
+	}
+
+	/** Deletes one object (and its preview) after commit, with no upload record (Memory Trail copies). */
+	@Transactional
+	public void discardObject(String key) {
+		if (key != null) {
+			deleteAfterCommit(new ArrayList<>(List.of(key, previewKey(key))));
+		}
+	}
+
+	/**
+	 * Copies a served object into the {@code trail/} prefix (outside the bucket rule that expires
+	 * {@code moments/}) and returns the new key. Runs in a background consumer; I/O never blocks a request.
+	 */
+	public String copyToTrail(String key, boolean video) {
+		MediaStorage store = storage.getIfAvailable();
+		if (store == null) {
+			throw new IllegalStateException("No media storage configured");
+		}
+		String target = "trail/" + Ids.newId();
+		try {
+			Path temp = Files.createTempFile("oneday-trail-", video ? ".mp4" : ".jpg");
+			Files.delete(temp);
+			try {
+				store.download(key, temp);
+				store.upload(target, temp, video ? "video/mp4" : "image/jpeg");
+			}
+			finally {
+				Files.deleteIfExists(temp);
+			}
+		}
+		catch (IOException ex) {
+			throw new UncheckedIOException("Could not copy media to the trail", ex);
+		}
+		return target;
 	}
 
 	/** Erasure: every upload the user ever made, records and objects. */

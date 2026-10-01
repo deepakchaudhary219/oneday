@@ -78,7 +78,9 @@ public class SecurityConfig {
 				.requestMatchers(HttpMethod.POST, "/moments", "/media/uploads", "/signals", "/signals/*/reveal",
 						"/conversations/*/messages", "/connections/*/spark",
 						"/connections/*/couple", "/dates", "/dates/*/accept",
-						"/right-now", "/right-now/*/join", "/right-now/requests/*/accept")
+						"/right-now", "/right-now/*/join", "/right-now/requests/*/accept",
+						"/plans", "/plans/*/join", "/plans/*/room", "/plans/*/requests/*/approve",
+						"/connections/*/vouch")
 				.hasAuthority(VERIFIED)
 				.requestMatchers("/staff/members/**", "/staff/audit", "/staff/accounts/**", "/staff/events/**",
 						"/staff/metrics/**")

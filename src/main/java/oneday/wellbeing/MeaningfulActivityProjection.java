@@ -52,6 +52,12 @@ class MeaningfulActivityProjection {
 	}
 
 	@Bean
+	DomainEventHandler<DomainEvent.PlanJoined> wmaOnPlan() {
+		return DomainEventHandler.of("wma.plan", DomainEvent.PlanJoined.class,
+				(e, meta) -> record(List.of(e.hostId(), e.memberId()), meta));
+	}
+
+	@Bean
 	DomainEventHandler<DomainEvent.DateConfirmed> wmaOnDate() {
 		return DomainEventHandler.of("wma.date", DomainEvent.DateConfirmed.class,
 				(e, meta) -> record(List.of(e.proposerId(), e.partnerId()), meta));

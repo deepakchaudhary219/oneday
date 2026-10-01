@@ -34,6 +34,7 @@ import oneday.profile.Profile;
 import oneday.profile.ProfileService;
 import oneday.safety.BlockChecker;
 import oneday.signals.SignalService;
+import oneday.trust.VouchService;
 
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -67,10 +68,13 @@ public class DiscoveryService {
 
 	private final OneDayProperties.Discovery settings;
 
+	private final VouchService vouches;
+
 	public DiscoveryService(MomentService moments, LocationService locations, ProfileService profiles,
 			ConnectionService connections,
 			SignalService signals, BlockChecker blocks, UserGuard guard, LocationPrivacy privacy,
-			RateLimiter rateLimiter, Clock clock, OneDayProperties properties) {
+			RateLimiter rateLimiter, Clock clock, OneDayProperties properties, VouchService vouches) {
+		this.vouches = vouches;
 		this.moments = moments;
 		this.locations = locations;
 		this.profiles = profiles;
@@ -145,11 +149,9 @@ public class DiscoveryService {
 			.thenComparing(c -> c.moment().getCreatedAt(), Comparator.reverseOrder()));
 
 		int from = page * settings.batchSize();
-		List<ConstellationNode> nodes = candidates.stream()
-			.skip(from)
-			.limit(settings.batchSize())
-			.map(this::toNode)
-			.toList();
+		List<Candidate> pageOf = candidates.stream().skip(from).limit(settings.batchSize()).toList();
+		Map<String, String> vouched = vouches.countsFor(pageOf.stream().map(c -> c.owner().getUserId()).toList());
+		List<ConstellationNode> nodes = pageOf.stream().map(c -> toNode(c, vouched.get(c.owner().getUserId()))).toList();
 		boolean caughtUp = from + settings.batchSize() >= candidates.size() || page + 1 >= settings.maxPagesPerSession();
 		return new Constellation(scope, page, nodes, caughtUp, caughtUp ? caughtUpMessage() : null);
 	}
@@ -198,14 +200,14 @@ public class DiscoveryService {
 		return activity == null || activity.equals(moment.getActivityTag()) || owner.getActivities().contains(activity);
 	}
 
-	private ConstellationNode toNode(Candidate c) {
+	private ConstellationNode toNode(Candidate c, String vouchedBy) {
 		Moment m = c.moment();
 		String activity = m.getActivityTag() != null ? m.getActivityTag()
 				: c.owner().getActivities().stream().findFirst().orElse(null);
 		return new ConstellationNode(m.getId(), c.owner().firstName(), m.getKind(), activity, c.placement().band(),
 				c.placement().band().label(), c.placement().direction(), m.isCapturedLive(), moments.previewUrl(m),
 				c.affinity().sharedHomeRegion(), c.affinity().sharedLanguages(),
-				c.affinity().explanation(m.getActivityTag()));
+				c.affinity().explanation(m.getActivityTag()), vouchedBy);
 	}
 
 	private Constellation caughtUp(DiscoveryScope scope, int page) {

@@ -29,6 +29,7 @@ import oneday.profile.Affinity;
 import oneday.profile.Profile;
 import oneday.profile.ProfileService;
 import oneday.safety.BlockChecker;
+import oneday.trust.VouchService;
 
 import org.springframework.data.domain.PageRequest;
 import org.springframework.stereotype.Service;
@@ -69,9 +70,13 @@ public class SignalService {
 
 	private final EventPublisher events;
 
+	private final VouchService vouches;
+
 	public SignalService(SignalRepository signals, MomentService moments, ProfileService profiles,
 			ConnectionService connections, ChatService chat, UserGuard guard, BlockChecker blocks, Clock clock,
-			OneDayProperties properties, ProductMetrics metrics, EventPublisher events) {
+			OneDayProperties properties, ProductMetrics metrics, EventPublisher events,
+			VouchService vouches) {
+		this.vouches = vouches;
 		this.metrics = metrics;
 		this.events = events;
 		this.signals = signals;
@@ -136,6 +141,7 @@ public class SignalService {
 			.toList();
 		Set<String> reachable = guard.reachableAmong(pending.stream().map(Signal::getSenderId).toList());
 		Profile me = profiles.require(recipientId);
+		Map<String, String> vouched = vouches.countsFor(reachable);
 		Map<String, Profile> senders = pending.stream()
 			.map(Signal::getSenderId)
 			.filter(reachable::contains)
@@ -150,7 +156,8 @@ public class SignalService {
 				Affinity affinity = Affinity.between(me, sender);
 				return new Ranked(new DigestItem(s.getId(), sender.firstName(), s.getReaction(),
 						s.getReaction().label(), s.getActivityRef(), aboutActivity,
-						affinity.explanation(aboutActivity), affinity.rootsMatch(), s.getCreatedAt()), affinity.rank());
+						affinity.explanation(aboutActivity), affinity.rootsMatch(), vouched.get(s.getSenderId()),
+						s.getCreatedAt()), affinity.rank());
 			})
 			.sorted(Comparator.comparingInt(Ranked::rank)
 				.reversed()
@@ -265,7 +272,8 @@ public class SignalService {
 	}
 
 	public record DigestItem(String signalId, String firstName, Reaction reaction, String reactionLabel,
-			String activityRef, String aboutActivity, String sharedContext, boolean rootsMatch, Instant receivedAt) {
+			String activityRef, String aboutActivity, String sharedContext, boolean rootsMatch, String vouchedBy,
+			Instant receivedAt) {
 	}
 
 	/** Internal ordering only; the rank never leaves the server. */

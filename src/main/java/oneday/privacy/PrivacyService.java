@@ -21,6 +21,7 @@ import oneday.ledger.LedgerService;
 import oneday.media.MediaService;
 import oneday.moments.MomentService;
 import oneday.notify.NotificationService;
+import oneday.plans.PlanService;
 import oneday.platform.IdempotencyStore;
 import oneday.profile.ProfileService;
 import oneday.rightnow.RightNowService;
@@ -28,6 +29,7 @@ import oneday.safety.SafetyService;
 import oneday.security.SessionService;
 import oneday.signals.SignalService;
 import oneday.staff.StaffDirectory;
+import oneday.trust.VouchService;
 import oneday.verification.VerificationService;
 import oneday.wellbeing.WellbeingService;
 
@@ -91,15 +93,23 @@ public class PrivacyService {
 
 	private final IdempotencyStore idempotency;
 
+	private final PlanService plans;
+
+	private final VouchService vouches;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
 			AccountAdministration administration, NotificationService notifications, SessionService sessions,
 			GrievanceService grievances, LedgerService ledger, EventOperations events, DateService dates,
-			WellbeingService wellbeing, RightNowService rightNow, IdempotencyStore idempotency, Clock clock,
+			WellbeingService wellbeing, RightNowService rightNow, IdempotencyStore idempotency, PlanService plans,
+			VouchService vouches,
+			Clock clock,
 			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
 		this.rightNow = rightNow;
 		this.idempotency = idempotency;
+		this.plans = plans;
+		this.vouches = vouches;
 		this.clock = clock;
 		this.momentRetention = momentRetention;
 		this.wellbeing = wellbeing;
@@ -258,6 +268,8 @@ public class PrivacyService {
 		wellbeing.forget(userId);
 		rightNow.forget(userId);
 		idempotency.forget(userId);
+		plans.forget(userId);
+		vouches.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);

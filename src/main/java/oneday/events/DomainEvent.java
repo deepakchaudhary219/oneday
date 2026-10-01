@@ -68,6 +68,30 @@ public sealed interface DomainEvent {
 		}
 	}
 
+	/** A host approved someone into a Plan: a real-world meet-up between people who chose each other. */
+	record PlanJoined(String planId, String hostId, String memberId) implements DomainEvent {
+
+		public String aggregateId() {
+			return planId;
+		}
+
+		public List<String> userIds() {
+			return List.of(hostId, memberId);
+		}
+	}
+
+	/** The owner kept a story in their private Memory Trail; its media is copied out of the expiring prefix. */
+	record MomentKept(String momentId, String ownerId) implements DomainEvent {
+
+		public String aggregateId() {
+			return momentId;
+		}
+
+		public List<String> userIds() {
+			return List.of(ownerId);
+		}
+	}
+
 	/** A Signal was sent (Layer 1). */
 	record SignalSent(String signalId, String senderId, String recipientId) implements DomainEvent {
 

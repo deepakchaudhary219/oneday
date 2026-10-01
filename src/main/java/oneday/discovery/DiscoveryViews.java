@@ -15,7 +15,8 @@ public final class DiscoveryViews {
 
 	/**
 	 * One Layer-0 ambient node. {@code nodeId} is the moment id, the handle for sending a Signal.
-	 * {@code sharedHomeRegion} is present only when it matches the viewer's own region.
+	 * {@code sharedHomeRegion} is present only when it matches the viewer's own region. {@code vouchedBy} is a
+	 * capped count of Trusted Vouches ("5+"), absent when there are none; never who vouched.
 	 */
 	public record ConstellationNode(
 			String nodeId,
@@ -29,7 +30,8 @@ public final class DiscoveryViews {
 			String previewUrl,
 			String sharedHomeRegion,
 			Set<String> sharedLanguages,
-			String whyYouSeeThis) {
+			String whyYouSeeThis,
+			String vouchedBy) {
 	}
 
 	public record Constellation(DiscoveryScope scope, int page, List<ConstellationNode> nodes, boolean caughtUp,
