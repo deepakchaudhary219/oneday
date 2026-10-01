@@ -256,6 +256,18 @@ public class ThreadService {
 		posts.delete(post);
 	}
 
+	/** Whether the person is currently in the thread and it is still open (Circle Live audiences). */
+	@Transactional(readOnly = true)
+	public boolean isOpenMember(String userId, String threadId) {
+		return threads.findById(threadId).filter(t -> t.isOpen(clock.instant())).isPresent()
+				&& membership(threadId, userId).filter(ThreadMember::isIn).isPresent();
+	}
+
+	@Transactional(readOnly = true)
+	public List<String> memberIds(String threadId) {
+		return members.findByThread(threadId).stream().filter(ThreadMember::isIn).map(ThreadMember::userId).toList();
+	}
+
 	/** The author of a post, for blocking or reporting it; only current members can name one. */
 	@Transactional(readOnly = true)
 	public Optional<String> authorOf(String viewerId, String postId) {

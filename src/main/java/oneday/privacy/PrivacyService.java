@@ -24,6 +24,7 @@ import oneday.identity.AuthService;
 import oneday.identity.User;
 import oneday.identity.UserGuard;
 import oneday.ledger.LedgerService;
+import oneday.live.LiveService;
 import oneday.media.MediaService;
 import oneday.moments.MomentService;
 import oneday.moments.SpotlightService;
@@ -127,6 +128,8 @@ public class PrivacyService {
 
 	private final AmaService amas;
 
+	private final LiveService live;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
@@ -137,7 +140,7 @@ public class PrivacyService {
 			PulseStatusService pulseStatuses, E2eeService e2ee,
 			CallService calls, TimeCapsuleService capsules,
 			ThreadService threads, SpotlightService spotlights, PublicFigureService figures,
-			AmaService amas, Clock clock,
+			AmaService amas, LiveService live, Clock clock,
 			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
 		this.rightNow = rightNow;
 		this.idempotency = idempotency;
@@ -153,6 +156,7 @@ public class PrivacyService {
 		this.spotlights = spotlights;
 		this.figures = figures;
 		this.amas = amas;
+		this.live = live;
 		this.clock = clock;
 		this.momentRetention = momentRetention;
 		this.wellbeing = wellbeing;
@@ -253,6 +257,7 @@ public class PrivacyService {
 		data.put("threadPosts", threads.export(userId));
 		data.put("publicFigure", figures.export(userId));
 		data.put("amaQuestions", amas.export(userId));
+		data.put("lives", live.export(userId)); // metadata only: lives are never recorded
 		return data;
 	}
 
@@ -332,6 +337,7 @@ public class PrivacyService {
 		spotlights.forget(userId);
 		figures.forget(userId);
 		amas.forget(userId);
+		live.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
