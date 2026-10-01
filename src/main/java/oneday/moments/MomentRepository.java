@@ -53,4 +53,7 @@ public interface MomentRepository extends JpaRepository<Moment, String> {
 	@Modifying
 	@Query("delete from Moment m where m.ownerId = :ownerId")
 	void deleteByOwner(@Param("ownerId") String ownerId);
+
+	List<Moment> findByOwnerIdInAndShareScopeAndExpiresAtAfterOrderByCreatedAtDesc(Collection<String> ownerIds,
+			ShareScope scope, Instant now, Pageable page);
 }

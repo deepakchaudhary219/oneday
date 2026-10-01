@@ -215,6 +215,23 @@ public class MomentService {
 		return new RelayView(rootId, activity, links.size(), open, links);
 	}
 
+	/**
+	 * Live public stories by these people, newest first, in full: for followers of Public Figures, who opted
+	 * into being seen. Views carry no location.
+	 */
+	@Transactional(readOnly = true)
+	public List<MomentView> livePublicBy(Collection<String> ownerIds, Map<String, String> names, int limit) {
+		if (ownerIds.isEmpty()) {
+			return List.of();
+		}
+		return moments
+			.findByOwnerIdInAndShareScopeAndExpiresAtAfterOrderByCreatedAtDesc(ownerIds, ShareScope.PUBLIC_DISCOVERY,
+					clock.instant(), PageRequest.of(0, Math.clamp(limit, 1, 50)))
+			.stream()
+			.map(m -> full(m, names.getOrDefault(m.getOwnerId(), "")))
+			.toList();
+	}
+
 	/** How many live answers each relay root has (for the Story Map and the Local Pulse). */
 	@Transactional(readOnly = true)
 	public Map<String, Long> relayCounts(Collection<String> rootIds) {

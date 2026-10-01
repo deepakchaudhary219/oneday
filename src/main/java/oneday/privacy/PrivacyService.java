@@ -15,6 +15,7 @@ import oneday.consent.ConsentService;
 import oneday.dates.DateService;
 import oneday.e2ee.E2eeService;
 import oneday.events.EventOperations;
+import oneday.figures.PublicFigureService;
 import oneday.geo.LocationService;
 import oneday.grievance.GrievanceService;
 import oneday.identity.AccountAdministration;
@@ -121,6 +122,8 @@ public class PrivacyService {
 
 	private final SpotlightService spotlights;
 
+	private final PublicFigureService figures;
+
 	public PrivacyService(UserGuard guard, AuthService accounts, ProfileService profiles, LocationService locations,
 			MomentService moments, SignalService signals, ConnectionService connections, ChatService chat,
 			SafetyService safety, VerificationService verification, StaffDirectory staff, MediaService media,
@@ -130,7 +133,7 @@ public class PrivacyService {
 			VouchService vouches, PlusService plus, ConsentService consents,
 			PulseStatusService pulseStatuses, E2eeService e2ee,
 			CallService calls, TimeCapsuleService capsules,
-			ThreadService threads, SpotlightService spotlights, Clock clock,
+			ThreadService threads, SpotlightService spotlights, PublicFigureService figures, Clock clock,
 			@Value("${oneday.moments.retention-after-expiry:P14D}") Duration momentRetention) {
 		this.rightNow = rightNow;
 		this.idempotency = idempotency;
@@ -144,6 +147,7 @@ public class PrivacyService {
 		this.capsules = capsules;
 		this.threads = threads;
 		this.spotlights = spotlights;
+		this.figures = figures;
 		this.clock = clock;
 		this.momentRetention = momentRetention;
 		this.wellbeing = wellbeing;
@@ -242,6 +246,7 @@ public class PrivacyService {
 		data.put("calls", calls.export(userId)); // call metadata only: media is never recorded
 		data.put("timeCapsules", capsules.export(userId));
 		data.put("threadPosts", threads.export(userId));
+		data.put("publicFigure", figures.export(userId));
 		return data;
 	}
 
@@ -319,6 +324,7 @@ public class PrivacyService {
 		capsules.forget(userId);
 		threads.forget(userId);
 		spotlights.forget(userId);
+		figures.forget(userId);
 		events.forget(userId);
 		profiles.delete(userId);
 		accounts.deleteAccount(userId);
